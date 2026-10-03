@@ -1736,18 +1736,14 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         switch (message)
         {
         case WM_NCCALCSIZE:
-            if (wparam)
+            if (wparam && IsZoomed(window))
             {
-                if (IsZoomed(window))
-                {
-                    MONITORINFO monitor{};
-                    monitor.cbSize = sizeof(monitor);
-                    GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor);
-                    reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam)->rgrc[0] = monitor.rcWork;
-                }
-                return 0;
+                MONITORINFO monitor{};
+                monitor.cbSize = sizeof(monitor);
+                GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor);
+                reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam)->rgrc[0] = monitor.rcWork;
             }
-            break;
+            return 0;
         case WM_NCHITTEST:
             return app->hit_test(lparam);
         case WM_SYSCOMMAND:
@@ -1972,6 +1968,8 @@ int run(HINSTANCE instance)
     DwmSetWindowAttribute(app.window, DWMWA_BORDER_COLOR, &border, sizeof(border));
     const MARGINS margins{1, 1, 1, 1};
     DwmExtendFrameIntoClientArea(app.window, &margins);
+    SetWindowPos(
+        app.window, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     app.create_controls();
     const auto loaded = bnet::load_settings();
     app.settings = loaded.value;
