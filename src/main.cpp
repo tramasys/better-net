@@ -724,7 +724,7 @@ struct App
                 const auto frame = D2D1::RoundedRect(D2D1::RectF(0.75F, 0.75F, width - 0.75F, height - 0.75F), 12, 12);
                 brush->SetColor(color(surface_color));
                 target->FillRoundedRectangle(frame, brush);
-                brush->SetColor(color(focused ? 0x82759D : hover ? 0x4A4357 : border_color));
+                brush->SetColor(color(index == selected ? 0x82759D : hover ? 0x4A4357 : border_color));
                 target->DrawRoundedRectangle(frame, brush, 1.5F);
                 const auto art = D2D1::RectF(12, 12, width - 12, height - 120);
                 graphics.round(target, brush, art, 7, 0x141416);
@@ -749,9 +749,6 @@ struct App
                 else
                 {
                     const auto center = D2D1::Point2F(width / 2, (art.top + art.bottom) / 2);
-                    brush->SetColor(color(accent_color, 0.10F));
-                    target->DrawEllipse(D2D1::Ellipse(center, 72, 72), brush, 1.0F);
-                    target->DrawEllipse(D2D1::Ellipse(center, 96, 96), brush, 1.0F);
                     graphics.text(target,
                                   brush,
                                   game.title,
@@ -978,6 +975,10 @@ struct App
         ShowWindow(window, SW_RESTORE);
         center_window(false);
         SetForegroundWindow(window);
+        selected = 0;
+        first = 0;
+        wheel_delta = 0;
+        update_cards();
 
         if (settings_open)
         {
@@ -1105,8 +1106,14 @@ struct App
             center_window(true);
         }
 
+        const bool focus_first = (initial_scan || previous_count == 0) && !settings_open && IsWindowVisible(window) &&
+                                 !IsIconic(window) && GetForegroundWindow() == window;
         initial_scan = false;
         update_cards();
+        if (focus_first && !catalog.games.empty())
+        {
+            SetFocus(cards.front());
+        }
     }
 
     void launch(std::size_t index)
