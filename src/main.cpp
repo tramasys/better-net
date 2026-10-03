@@ -531,7 +531,7 @@ struct App
         if (open)
         {
             refresh_shortcut_state();
-            set_status(shortcut_matches     ? L"Your shortcut can start better-net when it is closed."
+            set_status(shortcut_matches     ? L"Shortcut can start better-net when it is closed."
                        : shortcut_installed ? L"Launch when closed uses another key. Turn it off and on to update it."
                        : hotkey_registered  ? L"Your shortcut works while better-net is running."
                                             : L"That shortcut is already in use. Try another key combination.",
@@ -1358,7 +1358,7 @@ struct App
         settings = replacement;
         SendMessageW(window, WM_SETHOTKEY, 0, 0);
         register_hotkey();
-        set_status(shortcut_installed  ? L"Saved. Your shortcut can start better-net when it is closed."
+        set_status(shortcut_installed  ? L"Saved. Shortcut can start better-net when it is closed."
                    : hotkey_registered ? L"Saved. Your shortcut works while better-net is running."
                                        : L"Saved, but this shortcut is already in use.",
                    true);
@@ -1405,7 +1405,7 @@ struct App
         }
         register_hotkey();
         set_status(!updated             ? updated.error()
-                   : shortcut_installed ? L"Your shortcut can start better-net when it is closed."
+                   : shortcut_installed ? L"Shortcut can start better-net when it is closed."
                    : hotkey_registered  ? L"Your shortcut works while better-net is running."
                                         : L"Launch when closed is off. This shortcut is currently in use.",
                    true);
