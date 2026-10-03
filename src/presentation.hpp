@@ -35,5 +35,5 @@ constexpr int launcher_width_dip(std::size_t game_count)
     return 376 + static_cast<int>(columns - 1) * 336;
 }
 
-inline constexpr int launcher_height_dip = 676;
+inline constexpr int launcher_height_dip = 608;
 }

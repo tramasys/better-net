@@ -335,8 +335,16 @@ struct App
     {
         std::replace(value.begin(), value.end(), L';', L'.');
         std::replace(value.begin(), value.end(), L'\u2014', L'.');
+        const bool had_library_status = !library_status.empty();
         (for_settings ? settings_status : library_status) = std::move(value);
-        refresh_status();
+        if (!for_settings && had_library_status != !library_status.empty())
+        {
+            layout();
+        }
+        else
+        {
+            refresh_status();
+        }
     }
 
     HWND button(int id, const wchar_t* label)
@@ -454,9 +462,11 @@ struct App
             count
                 ? std::min(320.0F, (width - 56.0F - static_cast<float>(count - 1) * 16.0F) / static_cast<float>(count))
                 : 320.0F;
-        const float card_height = std::min(460.0F, height - 216.0F);
+        const float status_height = library_status.empty() ? 0.0F : 52.0F;
+        const float available_height = height - 148.0F - status_height;
+        const float card_height = std::min(460.0F, available_height);
         const float group_width = static_cast<float>(count) * (card_width + 16.0F) - 16.0F;
-        const float top = 120.0F + (height - 216.0F - card_height) / 2.0F;
+        const float top = 120.0F + (available_height - card_height) / 2.0F;
         for (std::size_t index = 0; index < cards.size(); ++index)
         {
             move(cards[index],
@@ -475,10 +485,10 @@ struct App
         const float status_width = std::min(640.0F, width - 56.0F);
         move(status_control,
              (width - status_width) / 2.0F,
-             settings_open ? 442.0F : height - 70.0F,
+             settings_open ? 442.0F : height - 66.0F,
              status_width,
              settings_open ? 82.0F : 38.0F,
-             true);
+             settings_open || !library_status.empty());
         refresh_status();
         InvalidateRect(window, nullptr, TRUE);
     }
@@ -655,15 +665,15 @@ struct App
                     const float unit = 96.0F / static_cast<float>(catalog.games.size());
                     graphics.round(target,
                                    brush,
-                                   D2D1::RectF(track_left, height - 86, track_left + 96, height - 83),
+                                   D2D1::RectF(track_left, height - 15, track_left + 96, height - 12),
                                    1.5F,
                                    border_color);
                     graphics.round(target,
                                    brush,
                                    D2D1::RectF(track_left + static_cast<float>(first) * unit,
-                                               height - 86,
+                                               height - 15,
                                                track_left + static_cast<float>(first + 3) * unit,
-                                               height - 83),
+                                               height - 12),
                                    1.5F,
                                    accent_color);
                 }
