@@ -99,12 +99,74 @@ void test_discovery_and_launch(const std::filesystem::path& root)
             "Invalid launch routes must be rejected");
 
     request.game = catalog.games.front();
+    request.client_path.clear();
+
+    require(bnet::launch_game(request, {}, adapter).status == bnet::LaunchStatus::missing_client,
+            "Call of Duty must retain its Battle.net route");
+
+    request.client_path = client;
     std::filesystem::remove(executable);
 
     require(bnet::launch_game(request, {}, adapter).status == bnet::LaunchStatus::missing_installation,
             "Installation must be revalidated before dispatch");
 
     require(dispatches == 1, "Invalid requests must never reach the process adapter");
+
+    struct DirectCase
+    {
+        std::wstring_view product;
+        std::wstring_view directory;
+        std::wstring_view executable;
+        std::wstring_view argument;
+    };
+
+    const std::array direct_cases = {DirectCase{L"wow", L"World of Warcraft", L"_retail_/Wow.exe", L""},
+                                     DirectCase{L"diablo3", L"Diablo III", L"x64/Diablo III64.exe", L"-launch"}};
+
+    for (const auto& direct : direct_cases)
+    {
+        const auto direct_installation = root / direct.directory;
+        const auto direct_executable = direct_installation / direct.executable;
+        write_file(direct_executable, bytes);
+
+        const std::array direct_records = {
+            bnet::InstallationRecord{std::wstring(direct.product), direct_installation, {}}};
+
+        const auto direct_catalog = bnet::catalog_from_records(direct_records);
+        require(direct_catalog.games.size() == 1, "Direct games must be discoverable without Battle.net");
+        const bnet::LaunchRequest direct_request{direct_catalog.games.front(), {}};
+
+        const bnet::ProcessAdapter direct_adapter = [&](const bnet::PreparedLaunch& prepared)
+        {
+            ++dispatches;
+            int count = 0;
+            auto* arguments = CommandLineToArgvW(prepared.command_line.c_str(), &count);
+            require(arguments != nullptr, "Direct launch arguments must parse");
+
+            const bool correct = count == (direct.argument.empty() ? 1 : 2) &&
+                                 arguments[0] == direct_executable.native() &&
+                                 (direct.argument.empty() || std::wstring_view(arguments[1]) == direct.argument);
+
+            LocalFree(arguments);
+
+            require(correct && prepared.application == direct_executable &&
+                        prepared.working_directory == direct_executable.parent_path(),
+                    "Direct launch must preserve Unicode paths, arguments, and working directory");
+
+            return bnet::LaunchResult{bnet::LaunchStatus::requested, L"Dry run", 0};
+        };
+
+        require(bnet::launch_game(direct_request, {}, direct_adapter).sent(),
+                "Supported games must launch without a Battle.net client");
+
+        std::filesystem::remove(direct_executable);
+
+        require(bnet::launch_game(direct_request, {}, direct_adapter).status ==
+                    bnet::LaunchStatus::missing_installation,
+                "Direct executable must be revalidated before dispatch");
+    }
+
+    require(dispatches == 3, "Only valid game requests may reach a process adapter");
 }
 
 void test_launch_guard()

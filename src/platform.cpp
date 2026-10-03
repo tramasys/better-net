@@ -321,14 +321,13 @@ LaunchResult create_process(const PreparedLaunch& launch)
                         &process))
     {
         const DWORD error = GetLastError();
-        return {LaunchStatus::process_error, L"Battle.net could not be started: " + windows_error(error), error};
+        return {LaunchStatus::process_error, L"Launch failed: " + windows_error(error), error};
     }
 
     const Handle process_handle(process.hProcess);
     const Handle thread_handle(process.hThread);
 
-    return {
-        LaunchStatus::requested, L"Request sent to Battle.net. Sign in or finish updates in Battle.net if needed.", 0};
+    return {LaunchStatus::requested, L"Launch requested.", 0};
 }
 }
 
@@ -510,16 +509,8 @@ std::expected<PreparedLaunch, LaunchResult> prepare_launch(const LaunchRequest& 
                                         (character >= L'0' && character <= L'9') || character == L'_';
                              }))
     {
-        return std::unexpected(LaunchResult{
-            LaunchStatus::invalid_descriptor, L"This installation has no verified Battle.net launch route.", 0});
-    }
-
-    std::error_code error;
-
-    if (!request.client_path.is_absolute() || !std::filesystem::is_regular_file(request.client_path, error))
-    {
-        return std::unexpected(LaunchResult{
-            LaunchStatus::missing_client, L"Battle.net is missing. Install or repair it, then press F5 to rescan.", 0});
+        return std::unexpected(
+            LaunchResult{LaunchStatus::invalid_descriptor, L"This installation has no verified launch route.", 0});
     }
 
     if (!validate_game(request.game))
@@ -530,6 +521,30 @@ std::expected<PreparedLaunch, LaunchResult> prepare_launch(const LaunchRequest& 
     }
 
     PreparedLaunch prepared;
+
+    if (const auto arguments = direct_launch_arguments_for(request.game.product_id))
+    {
+        prepared.application = request.game.executable;
+        prepared.working_directory = prepared.application.parent_path();
+        prepared.command_line = quote_windows_argument(prepared.application.native());
+
+        if (!arguments->empty())
+        {
+            prepared.command_line += L" ";
+            prepared.command_line += *arguments;
+        }
+
+        return prepared;
+    }
+
+    std::error_code error;
+
+    if (!request.client_path.is_absolute() || !std::filesystem::is_regular_file(request.client_path, error))
+    {
+        return std::unexpected(LaunchResult{
+            LaunchStatus::missing_client, L"Battle.net is missing. Install or repair it, then press F5 to rescan.", 0});
+    }
+
     prepared.application = request.client_path;
     prepared.working_directory = request.client_path.parent_path();
 

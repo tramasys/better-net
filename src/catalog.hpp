@@ -45,6 +45,7 @@ struct AgentRecords
 Catalog discover(std::stop_token cancellation = {});
 bool validate_game(const Game& game);
 std::optional<std::wstring> launch_code_for(std::wstring_view product_id);
+std::optional<std::wstring_view> direct_launch_arguments_for(std::wstring_view product_id);
 AgentRecords parse_agent_records(std::span<const std::byte> data);
 std::wstring read_build_version(const std::filesystem::path& manifest, std::wstring_view product_id);
 

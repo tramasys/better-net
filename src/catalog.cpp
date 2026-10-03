@@ -27,14 +27,15 @@ struct Product
     std::wstring_view launch_code;
     std::array<std::wstring_view, 3> executables;
     std::wstring_view versioned_executable{};
+    std::optional<std::wstring_view> direct_arguments{};
 };
 
 constexpr std::array products = {
     Product{L"auks", L"Call of Duty", L"AUKS", {L"_retail_/cod.exe", L"cod.exe", L""}},
     Product{L"fen", L"Diablo IV", L"Fen", {L"Diablo IV.exe", L"", L""}},
     Product{L"prometheus", L"Overwatch 2", L"Pro", {L"_retail_/Overwatch.exe", L"Overwatch.exe", L""}},
-    Product{L"wow", L"World of Warcraft", L"WoW", {L"_retail_/Wow.exe", L"Wow.exe", L""}},
-    Product{L"diablo3", L"Diablo III", L"D3", {L"x64/Diablo III64.exe", L"Diablo III.exe", L""}},
+    Product{L"wow", L"World of Warcraft", L"WoW", {L"_retail_/Wow.exe", L"Wow.exe", L""}, {}, L""},
+    Product{L"diablo3", L"Diablo III", L"D3", {L"x64/Diablo III64.exe", L"Diablo III.exe", L""}, {}, L"-launch"},
     Product{L"osi", L"Diablo II: Resurrected", L"OSI", {L"D2R.exe", L"", L""}},
     Product{L"hs_beta", L"Hearthstone", L"WTCG", {L"Hearthstone.exe", L"", L""}},
     Product{L"heroes", L"Heroes of the Storm", L"Hero", {}, L"HeroesOfTheStorm_x64.exe"},
@@ -642,6 +643,12 @@ std::optional<std::wstring> launch_code_for(std::wstring_view product_id)
     }
 
     return std::wstring(product->launch_code);
+}
+
+std::optional<std::wstring_view> direct_launch_arguments_for(std::wstring_view product_id)
+{
+    const auto* product = product_for(product_id);
+    return product ? product->direct_arguments : std::nullopt;
 }
 
 std::wstring read_build_version(const std::filesystem::path& manifest, std::wstring_view product_id)
