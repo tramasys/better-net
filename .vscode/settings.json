@@ -1,0 +1,7 @@
+{
+    "[cpp]": { "editor.formatOnSave": false },
+    "[c]": { "editor.formatOnSave": false },
+    "C_Cpp.formatting": "disabled",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/debug/compile_commands.json",
+    "cmake.useCMakePresets": "always"
+}

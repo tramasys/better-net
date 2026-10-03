@@ -1,0 +1,27 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Format all C++",
+            "type": "process",
+            "command": "python",
+            "args": ["${workspaceFolder}/tools/format.py"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Check C++ format",
+            "type": "process",
+            "command": "python",
+            "args": ["${workspaceFolder}/tools/format.py", "--check"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Release",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--build", "--preset", "release"],
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": ["$msCompile"]
+        }
+    ]
+}
