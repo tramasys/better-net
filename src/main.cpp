@@ -521,8 +521,9 @@ struct App
         SetWindowTextW(setting_buttons[1], bnet::hotkey_text(pending_settings).c_str());
         if (open)
         {
-            set_status(shortcut_installed ? L"Your shortcut can open better-net when it is closed."
-                                          : L"Enable launch when closed to make your shortcut available at any time.",
+            set_status(shortcut_installed  ? L"Windows shortcut enabled for opening better-net."
+                       : hotkey_registered ? L"Enable launch when closed to make your shortcut available at any time."
+                                           : L"That shortcut is already in use. Try another key combination.",
                        true);
         }
         layout();
@@ -924,10 +925,9 @@ struct App
             length > 0 && length < executable.size() && bnet::launcher_shortcut_matches(executable.data(), settings);
 
         hotkey_registered =
-            shortcut_installed ||
             RegisterHotKey(window, 1, settings.hotkey_modifiers | MOD_NOREPEAT, settings.hotkey_key) != 0;
 
-        if (!hotkey_registered)
+        if (!hotkey_registered && !shortcut_installed)
         {
             set_status(L"That shortcut is already in use. Choose another key in settings.", true);
         }
@@ -1409,6 +1409,13 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             break;
         case WM_NCHITTEST:
             return app->hit_test(lparam);
+        case WM_SYSCOMMAND:
+            if ((wparam & 0xFFF0) == SC_HOTKEY)
+            {
+                app->restore();
+                return 0;
+            }
+            break;
         case WM_PAINT:
             app->paint();
             return 0;
