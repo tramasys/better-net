@@ -479,13 +479,13 @@ struct App
         const float panel_width = std::min(320.0F, width - 56.0F);
         const float left = (width - panel_width) / 2.0F;
         move(setting_buttons[0], (width - 120.0F) / 2.0F, 88, 120, 36, settings_open);
-        move(setting_buttons[1], left, 216, panel_width, 52, settings_open);
-        move(setting_buttons[2], left, 320, panel_width, 44, settings_open);
-        move(setting_buttons[3], left, 376, panel_width, 44, settings_open);
+        move(setting_buttons[1], left, 188, panel_width, 52, settings_open);
+        move(setting_buttons[2], left, 292, panel_width, 44, settings_open);
+        move(setting_buttons[3], left, 348, panel_width, 44, settings_open);
         const float status_width = std::min(640.0F, width - 56.0F);
         move(status_control,
              (width - status_width) / 2.0F,
-             settings_open ? 442.0F : height - 66.0F,
+             settings_open ? 414.0F : height - 66.0F,
              status_width,
              settings_open ? 82.0F : 38.0F,
              settings_open || !library_status.empty());
@@ -620,7 +620,7 @@ struct App
                 graphics.text(target,
                               brush,
                               recording ? L"Press your shortcut. Esc cancels." : L"Click the keys to change them.",
-                              D2D1::RectF(28, 280, width - 28, 308),
+                              D2D1::RectF(28, 252, width - 28, 280),
                               0,
                               muted_color,
                               DWRITE_TEXT_ALIGNMENT_CENTER);
