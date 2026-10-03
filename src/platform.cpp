@@ -24,7 +24,6 @@ LSTATUS read_startup_command(HKEY key, std::wstring& command) {
     std::array<wchar_t, 261> buffer{};
     DWORD bytes = static_cast<DWORD>(sizeof(buffer));
     DWORD type = 0;
-
     const auto result = RegQueryValueExW(key, L"better-net", nullptr, &type, reinterpret_cast<BYTE*>(buffer.data()), &bytes);
 
     if (result != ERROR_SUCCESS) {
@@ -107,6 +106,7 @@ bool load_shell_link(const std::filesystem::path& path, ComPtr<IShellLinkW>& lin
 
 bool shortcut_targets(IShellLinkW& link, const std::filesystem::path& executable) {
     std::array<wchar_t, 32768> target{};
+
     return link.GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH) == S_OK &&
            CompareStringOrdinal(target.data(), -1, executable.c_str(), -1, TRUE) == CSTR_EQUAL;
 }
@@ -115,6 +115,7 @@ WORD shortcut_hotkey(const Settings& settings) {
     const auto modifiers = ((settings.hotkey_modifiers & MOD_CONTROL) ? HOTKEYF_CONTROL : 0) |
                            ((settings.hotkey_modifiers & MOD_ALT) ? HOTKEYF_ALT : 0) |
                            ((settings.hotkey_modifiers & MOD_SHIFT) ? HOTKEYF_SHIFT : 0);
+
     return MAKEWORD(static_cast<BYTE>(settings.hotkey_key), modifiers);
 }
 
@@ -306,16 +307,13 @@ LaunchResult create_process(const PreparedLaunch& launch) {
 
     const Handle process_handle(process.hProcess);
     const Handle thread_handle(process.hThread);
-
     return {LaunchStatus::requested, L"Launch requested.", 0};
 }
 }
 
 bool valid_hotkey(const Settings& settings) noexcept {
     const auto key = settings.hotkey_key;
-
     const bool supported_key = (key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || (key >= VK_F1 && key <= VK_F24 && key != VK_F12);
-
     return (settings.hotkey_modifiers & ~7U) == 0 && (settings.hotkey_modifiers & 3U) != 0 && supported_key;
 }
 
@@ -670,6 +668,7 @@ std::expected<void, std::wstring> create_launcher_shortcut(const std::filesystem
 
         check(CoCreateInstance(
             CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf())));
+
         check(link->SetPath(executable.c_str()));
         check(link->SetWorkingDirectory(executable.parent_path().c_str()));
         check(link->SetDescription(L"Open better-net"));
@@ -678,7 +677,6 @@ std::expected<void, std::wstring> create_launcher_shortcut(const std::filesystem
         check(link->SetShowCmd(SW_SHOWNORMAL));
         check(link->SetIconLocation(executable.c_str(), 0));
         check(link.As(&persistence));
-
         return save_shell_link(*persistence.Get(), shortcut_path);
     } catch (HRESULT result) {
         return std::unexpected(L"Windows could not save the launcher shortcut: " + windows_error(static_cast<DWORD>(result)));

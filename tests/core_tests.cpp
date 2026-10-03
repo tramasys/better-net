@@ -55,7 +55,6 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
     bytes[86] = 2;
     write_file(executable, bytes);
     write_file(client, "Fixture only; never execute");
-
     write_file(installation / L".build.info", "Active!DEC:1|Version!STRING:0|Product!STRING:0\nmalformed\n1|3.14.2.123|auks\n");
 
     const std::array records = {bnet::InstallationRecord{L"auks", installation},
@@ -73,9 +72,7 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
         int count = 0;
         auto* arguments = CommandLineToArgvW(prepared.command_line.c_str(), &count);
         require(arguments != nullptr, "Launch arguments must parse");
-
         const bool correct = count == 2 && arguments[0] == client.native() && std::wstring_view(arguments[1]) == L"--exec=launch AUKS";
-
         LocalFree(arguments);
         require(correct && prepared.application == client, "Launch must preserve Unicode paths and product route");
         return bnet::LaunchResult{bnet::LaunchStatus::requested, L"Dry run", 0};
@@ -115,9 +112,7 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
         const auto direct_installation = root / direct.directory;
         const auto direct_executable = direct_installation / direct.executable;
         write_file(direct_executable, bytes);
-
         const std::array direct_records = {bnet::InstallationRecord{std::wstring(direct.product), direct_installation}};
-
         const auto direct_catalog = bnet::catalog_from_records(direct_records);
         require(direct_catalog.games.size() == 1, "Direct games must be discoverable without Battle.net");
         const bnet::LaunchRequest direct_request{direct_catalog.games.front(), {}};
@@ -140,7 +135,6 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
         };
 
         require(bnet::launch_game(direct_request, {}, direct_adapter).sent(), "Supported games must launch without a Battle.net client");
-
         std::filesystem::remove(direct_executable);
 
         require(bnet::launch_game(direct_request, {}, direct_adapter).status == bnet::LaunchStatus::missing_installation,
@@ -253,8 +247,10 @@ void test_carousel() {
     require(bnet::visible_game_count(0) == 0 && bnet::visible_game_count(1) == 1 && bnet::visible_game_count(2) == 2 &&
                 bnet::visible_game_count(7) == 3,
             "Only installed games may occupy cards, with at most three visible");
+
     require(bnet::launcher_width_dip(0) == 376 && bnet::launcher_width_dip(2) == 712 && bnet::launcher_width_dip(7) == 1048,
             "Window width must follow the visible card count");
+
     require(bnet::carousel_start(0, 0) == 0 && bnet::carousel_start(4, 2) == 0 && bnet::carousel_start(4, 3) == 1 &&
                 bnet::carousel_start(7, 6) == 4 && bnet::carousel_start(7, 5, 4) == 4 && bnet::carousel_start(7, 0, 4) == 0 &&
                 bnet::carousel_start(1, 6, 4) == 0,
@@ -310,6 +306,7 @@ void test_shortcut_toggle(const std::filesystem::path& root) {
                     SUCCEEDED(link->GetArguments(arguments.data(), static_cast<int>(arguments.size()))) &&
                     std::wstring_view(arguments.data()) == L"--show" && SUCCEEDED(link->GetHotkey(&hotkey)),
                 "Shortcut target and arguments must survive toggling");
+
         return hotkey;
     };
 

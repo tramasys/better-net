@@ -87,7 +87,6 @@ Pixels decode_image(const std::filesystem::path& path) {
         CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, reinterpret_cast<void**>(factory.GetAddressOf())));
 
     require(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder));
-
     require(decoder->GetFrame(0, &frame));
     UINT width = 0;
     UINT height = 0;
@@ -108,9 +107,7 @@ Pixels decode_image(const std::filesystem::path& path) {
         scaler.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom));
 
     result.data.resize(static_cast<std::size_t>(result.width) * result.height * 4);
-
     require(converter->CopyPixels(nullptr, result.width * 4, static_cast<UINT>(result.data.size()), result.data.data()));
-
     return result;
 }
 
@@ -226,7 +223,6 @@ struct Graphics {
         fonts[font]->SetTextAlignment(alignment);
         fonts[font]->SetParagraphAlignment(middle ? DWRITE_PARAGRAPH_ALIGNMENT_CENTER : DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
         fonts[font]->SetWordWrapping(wrap ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP);
-
         target->DrawTextW(value.data(), static_cast<UINT32>(value.size()), fonts[font].Get(), area, brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
 
@@ -327,6 +323,7 @@ struct App {
         if (control_font) {
             DeleteObject(control_font);
         }
+
         DeleteObject(background);
     }
 
@@ -365,6 +362,7 @@ struct App {
         std::replace(value.begin(), value.end(), L'\u2014', L'.');
         const bool had_library_status = !library_status.empty();
         (for_settings ? settings_status : library_status) = std::move(value);
+
         if (!for_settings && had_library_status != !library_status.empty()) {
             layout();
         } else {
@@ -385,6 +383,7 @@ struct App {
                                             reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                                             nullptr,
                                             nullptr);
+
         require(result ? S_OK : E_FAIL);
         SetWindowSubclass(result, button_proc, 1, reinterpret_cast<DWORD_PTR>(this));
         return result;
@@ -405,15 +404,19 @@ struct App {
                                              CLEARTYPE_QUALITY,
                                              DEFAULT_PITCH,
                                              L"Segoe UI");
+
         SendMessageW(status_control, WM_SETFONT, reinterpret_cast<WPARAM>(replacement), TRUE);
+
         if (control_font) {
             DeleteObject(control_font);
         }
+
         control_font = replacement;
     }
 
     void update_icons() {
         const auto instance = GetModuleHandleW(nullptr);
+
         const auto load = [&](int width_metric, int height_metric) {
             return static_cast<HICON>(LoadImageW(instance,
                                                  MAKEINTRESOURCEW(app_icon_resource),
@@ -465,15 +468,19 @@ struct App {
 
     void create_controls() {
         caption_buttons = {button(settings_id, L"Shortcut settings"), button(minimize_id, L"Minimize"), button(close_id, L"Close to tray")};
+
         for (std::size_t index = 0; index < cards.size(); ++index) {
             cards[index] = button(card_base + static_cast<int>(index), L"Play");
         }
+
         setting_buttons = {button(cancel_id, L"Back to library"),
                            button(hotkey_id, L"Change shortcut"),
                            button(shortcut_id, L"Launch when closed. Off"),
                            button(startup_id, L"Add to startup. Off")};
+
         status_control = CreateWindowExW(
             0, L"STATIC", library_status.c_str(), WS_CHILD | WS_VISIBLE | SS_CENTER, 0, 0, 0, 0, window, nullptr, nullptr, nullptr);
+
         update_font();
     }
 
@@ -484,21 +491,27 @@ struct App {
         monitor.cbSize = sizeof(monitor);
         GetMonitorInfoW(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST), &monitor);
         const auto& area = monitor.rcWork;
+
         for (int pass = 0; pass < 2; ++pass) {
             const auto dpi = graphics.dpi;
             RECT current{};
             GetWindowRect(window, &current);
+
             const int width =
                 std::min(resize ? px(static_cast<float>(bnet::launcher_width_dip(catalog.games.size()))) : current.right - current.left,
                          area.right - area.left - 24);
+
             const int height = std::min(resize ? px(bnet::launcher_height_dip) : current.bottom - current.top, area.bottom - area.top - 24);
             const int left = area.left + (area.right - area.left - width) / 2;
             const int top = area.top + (area.bottom - area.top - height) / 2;
             const bool same_size = width == current.right - current.left && height == current.bottom - current.top;
+
             if (same_size && left == current.left && top == current.top) {
                 break;
             }
+
             SetWindowPos(window, nullptr, left, top, width, height, SWP_NOZORDER | SWP_NOACTIVATE | (same_size ? SWP_NOSIZE : 0));
+
             if (graphics.dpi == dpi) {
                 break;
             }
@@ -510,22 +523,29 @@ struct App {
             InvalidateRect(hovered_play, nullptr, FALSE);
             hovered_play = nullptr;
         }
+
         const auto [width, height] = client_size();
+
         const auto move = [this](HWND control, float x, float y, float w, float h, bool visible) {
             SetWindowPos(control, nullptr, px(x), px(y), px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
             ShowWindow(control, visible ? SW_SHOW : SW_HIDE);
         };
+
         for (std::size_t index = 0; index < caption_buttons.size(); ++index) {
             move(caption_buttons[index], width - 136.0F + static_cast<float>(index) * 38.0F, 16, 32, 32, true);
         }
+
         const auto count = bnet::visible_game_count(catalog.games.size());
+
         const float card_width =
             count ? std::min(320.0F, (width - 56.0F - static_cast<float>(count - 1) * 16.0F) / static_cast<float>(count)) : 320.0F;
+
         const float status_height = library_status.empty() ? 0.0F : 52.0F;
         const float available_height = height - 148.0F - status_height;
         const float card_height = std::min(460.0F, available_height);
         const float group_width = static_cast<float>(count) * (card_width + 16.0F) - 16.0F;
         const float top = 120.0F + (available_height - card_height) / 2.0F;
+
         for (std::size_t index = 0; index < cards.size(); ++index) {
             move(cards[index],
                  (width - group_width) / 2.0F + static_cast<float>(index) * (card_width + 16.0F),
@@ -534,6 +554,7 @@ struct App {
                  card_height,
                  !settings_open && index < count);
         }
+
         const float panel_width = std::min(320.0F, width - 56.0F);
         const float left = (width - panel_width) / 2.0F;
         move(setting_buttons[0], (width - 120.0F) / 2.0F, 88, 120, 36, settings_open);
@@ -541,12 +562,14 @@ struct App {
         move(setting_buttons[2], left, 292, panel_width, 56, settings_open);
         move(setting_buttons[3], left, 360, panel_width, 56, settings_open);
         const float status_width = std::min(640.0F, width - 56.0F);
+
         move(status_control,
              (width - status_width) / 2.0F,
              settings_open ? 432.0F : height - 66.0F,
              status_width,
              settings_open ? 82.0F : 38.0F,
              settings_open || !library_status.empty());
+
         refresh_status();
         InvalidateRect(window, nullptr, TRUE);
     }
@@ -638,9 +661,11 @@ struct App {
 
     void update_cards(bool relayout = true) {
         first = bnet::carousel_start(catalog.games.size(), selected, first);
+
         for (std::size_t index = 0; index < cards.size(); ++index) {
             const auto game_index = first + index;
             const bool exists = game_index < catalog.games.size();
+
             EnableWindow(cards[index],
                          exists && !scanning && !launch_running && !launch_guard.busy() && !fresh_processes_required &&
                              !is_running(game_index));
@@ -654,9 +679,12 @@ struct App {
                 const auto label = std::wstring(play_label(game_index)) + L" " + game.title + L". " + game.version;
                 SetWindowTextW(cards[index], label.c_str());
             }
+
             InvalidateRect(cards[index], nullptr, TRUE);
         }
+
         count_text = std::to_wstring(catalog.games.size()) + L" installed";
+
         if (relayout) {
             layout();
         }
@@ -666,15 +694,18 @@ struct App {
         settings_open = open;
         recording = false;
         SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
+
         if (open) {
             refresh_shortcut_state();
             refresh_startup_state();
+
             set_status(shortcut_matches     ? L"Shortcut can start better-net when it is closed."
                        : shortcut_installed ? L"Launch when closed uses another key. Turn it off and on to update it."
                        : hotkey_registered  ? L"Your shortcut works while better-net is running."
                                             : L"That shortcut is already in use. Try another key combination.",
                        true);
         }
+
         layout();
         refresh_running_games(true);
 
@@ -689,15 +720,19 @@ struct App {
         if (key == VK_CONTROL || key == VK_MENU || key == VK_SHIFT || key == VK_LWIN || key == VK_RWIN) {
             return;
         }
+
         auto candidate = settings;
         candidate.hotkey_key = static_cast<std::uint32_t>(key);
+
         candidate.hotkey_modifiers = (GetKeyState(VK_CONTROL) < 0 ? MOD_CONTROL : 0) | (GetKeyState(VK_MENU) < 0 ? MOD_ALT : 0) |
                                      (GetKeyState(VK_SHIFT) < 0 ? MOD_SHIFT : 0) |
                                      ((GetKeyState(VK_LWIN) < 0 || GetKeyState(VK_RWIN) < 0) ? MOD_WIN : 0);
+
         if (!bnet::valid_hotkey(candidate)) {
             set_status(L"Use Ctrl or Alt with a letter, number or function key.", true);
             return;
         }
+
         recording = false;
         save_shortcut(candidate);
         SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
@@ -706,11 +741,14 @@ struct App {
 
     void select(int direction, bool focus = true) {
         const auto count = catalog.games.size();
+
         if (count == 0 || settings_open) {
             return;
         }
+
         selected = static_cast<std::size_t>((static_cast<int>(selected) + direction + static_cast<int>(count)) % static_cast<int>(count));
         update_cards();
+
         if (focus) {
             focus_selection();
         }
@@ -720,7 +758,9 @@ struct App {
         if (catalog.games.size() <= 3 || settings_open) {
             return;
         }
+
         wheel_delta += delta;
+
         while (std::abs(wheel_delta) >= WHEEL_DELTA) {
             select(wheel_delta > 0 ? -1 : 1);
             wheel_delta += wheel_delta > 0 ? -WHEEL_DELTA : WHEEL_DELTA;
@@ -730,6 +770,7 @@ struct App {
     void paint() {
         PAINTSTRUCT state{};
         const auto dc = BeginPaint(window, &state);
+
         try {
             graphics.ensure_window(window);
             auto* target = graphics.window_target.Get();
@@ -738,13 +779,17 @@ struct App {
             target->BeginDraw();
             target->Clear(color(background_color));
             target->DrawBitmap(graphics.logo.Get(), D2D1::RectF(26, 20, 50, 44));
+
             graphics.text(
                 target, brush, L"better-net", D2D1::RectF(58, 16, width - 142, 48), 1, text_color, DWRITE_TEXT_ALIGNMENT_LEADING, true);
+
             brush->SetColor(color(border_color));
             target->DrawLine(D2D1::Point2F(28, 64), D2D1::Point2F(width - 28, 64), brush);
+
             if (settings_open) {
                 graphics.text(
                     target, brush, L"Shortcut", D2D1::RectF(28, 142, width - 28, 174), 3, text_color, DWRITE_TEXT_ALIGNMENT_CENTER);
+
                 graphics.text(target,
                               brush,
                               recording ? L"Press your shortcut. Esc cancels." : L"Click to change. Saves automatically.",
@@ -754,6 +799,7 @@ struct App {
                               DWRITE_TEXT_ALIGNMENT_CENTER);
             } else {
                 graphics.text(target, brush, L"Library", D2D1::RectF(28, 84, width - 150, 110), 2, text_color);
+
                 graphics.text(target,
                               brush,
                               count_text,
@@ -761,6 +807,7 @@ struct App {
                               0,
                               muted_color,
                               DWRITE_TEXT_ALIGNMENT_TRAILING);
+
                 if (catalog.games.empty()) {
                     graphics.text(target,
                                   brush,
@@ -769,6 +816,7 @@ struct App {
                                   2,
                                   text_color,
                                   DWRITE_TEXT_ALIGNMENT_CENTER);
+
                     graphics.text(target,
                                   brush,
                                   L"Installed games will appear here.",
@@ -777,10 +825,12 @@ struct App {
                                   muted_color,
                                   DWRITE_TEXT_ALIGNMENT_CENTER);
                 }
+
                 if (catalog.games.size() > 3) {
                     const float track_left = (width - 96.0F) / 2.0F;
                     const float unit = 96.0F / static_cast<float>(catalog.games.size());
                     graphics.round(target, brush, D2D1::RectF(track_left, height - 15, track_left + 96, height - 12), 1.5F, border_color);
+
                     graphics.round(target,
                                    brush,
                                    D2D1::RectF(track_left + static_cast<float>(first) * unit,
@@ -791,6 +841,7 @@ struct App {
                                    accent_color);
                 }
             }
+
             if (target->EndDraw() == D2DERR_RECREATE_TARGET) {
                 graphics.reset_window();
                 InvalidateRect(window, nullptr, FALSE);
@@ -804,6 +855,7 @@ struct App {
             GetClientRect(window, &area);
             DrawTextW(dc, L"Unable to draw better-net. Please restart the app.", -1, &area, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
+
         EndPaint(window, &state);
     }
 
@@ -820,8 +872,10 @@ struct App {
         const bool hover = hovered == item.hwndItem;
         target->BeginDraw();
         target->Clear(color(background_color));
+
         if (item.CtlID >= card_base && item.CtlID < card_base + cards.size()) {
             const auto index = first + item.CtlID - card_base;
+
             if (index < catalog.games.size()) {
                 const auto& game = catalog.games[index];
                 const auto frame = D2D1::RoundedRect(D2D1::RectF(0.75F, 0.75F, width - 0.75F, height - 0.75F), 12, 12);
@@ -831,6 +885,7 @@ struct App {
                 target->DrawRoundedRectangle(frame, brush, 1.5F);
                 const auto art = D2D1::RectF(12, 12, width - 12, height - 120);
                 graphics.round(target, brush, art, 7, 0x141416);
+
                 if (index < graphics.images.size() && graphics.images[index]) {
                     const auto size = graphics.images[index]->GetSize();
                     const float factor = std::max((art.right - art.left) / size.width, (art.bottom - art.top) / size.height);
@@ -838,14 +893,17 @@ struct App {
                     const float art_height = size.height * factor;
                     const float left = (art.left + art.right - art_width) / 2.0F;
                     const float top = (art.top + art.bottom - art_height) / 2.0F;
+
                     const auto properties =
                         D2D1::BitmapBrushProperties(D2D1_EXTEND_MODE_CLAMP, D2D1_EXTEND_MODE_CLAMP, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+
                     ComPtr<ID2D1BitmapBrush> artwork_brush;
                     require(target->CreateBitmapBrush(graphics.images[index].Get(), &properties, nullptr, artwork_brush.GetAddressOf()));
                     artwork_brush->SetTransform(D2D1::Matrix3x2F::Scale(factor, factor) * D2D1::Matrix3x2F::Translation(left, top));
                     target->FillRoundedRectangle(D2D1::RoundedRect(art, 7, 7), artwork_brush.Get());
                 } else {
                     const auto center = D2D1::Point2F(width / 2, (art.top + art.bottom) / 2);
+
                     graphics.text(target,
                                   brush,
                                   game.title,
@@ -856,15 +914,19 @@ struct App {
                                   true,
                                   true);
                 }
+
                 graphics.text(target, brush, game.title, D2D1::RectF(20, art.bottom + 12, width - 20, art.bottom + 38), 2, text_color);
+
                 graphics.text(target,
                               brush,
                               game.version.empty() ? L"Ready to play" : game.version,
                               D2D1::RectF(20, art.bottom + 40, width - 20, art.bottom + 59),
                               0,
                               muted_color);
+
                 const bool enabled = IsWindowEnabled(item.hwndItem);
                 const bool play_hover = enabled && hovered_play == item.hwndItem;
+
                 graphics.round(target,
                                brush,
                                play_bounds(width, height),
@@ -874,14 +936,17 @@ struct App {
                                : play_hover                              ? accent_hover_color
                                : (hover || focused || index == selected) ? accent_surface
                                                                          : 0x27252E);
+
                 if (play_hover) {
                     const auto bounds = play_bounds(width, height);
                     brush->SetColor(color(accent_hover_border_color));
+
                     target->DrawRoundedRectangle(
                         D2D1::RoundedRect(
                             D2D1::RectF(bounds.left + 0.5F, bounds.top + 0.5F, bounds.right - 0.5F, bounds.bottom - 0.5F), 7, 7),
                         brush);
                 }
+
                 graphics.text(target,
                               brush,
                               play_label(index),
@@ -897,10 +962,13 @@ struct App {
             if (hover || focused || down) {
                 graphics.round(target, brush, D2D1::RectF(0, 0, width, height), 7, down ? 0x333039 : 0x242227);
             }
+
             brush->SetColor(color(hover || focused ? text_color : muted_color));
+
             const auto line = [target, brush](float x1, float y1, float x2, float y2) {
                 target->DrawLine(D2D1::Point2F(x1, y1), D2D1::Point2F(x2, y2), brush, 1.4F);
             };
+
             if (item.CtlID == settings_id) {
                 line(9, 12, 23, 12);
                 line(9, 20, 23, 20);
@@ -923,6 +991,7 @@ struct App {
             target->FillRoundedRectangle(frame, brush);
             brush->SetColor(color(focused ? accent_color : hover ? accent_hover_border_color : border_color));
             target->DrawRoundedRectangle(frame, brush);
+
             graphics.text(target,
                           brush,
                           item.CtlID == startup_id ? L"Add to startup" : L"Launch when closed",
@@ -931,6 +1000,7 @@ struct App {
                           text_color,
                           DWRITE_TEXT_ALIGNMENT_LEADING,
                           true);
+
             graphics.text(target,
                           brush,
                           enabled ? L"On" : L"Off",
@@ -939,10 +1009,13 @@ struct App {
                           enabled ? accent_color : muted_color,
                           DWRITE_TEXT_ALIGNMENT_CENTER,
                           true);
+
             const float middle = height / 2;
             const auto track = D2D1::RectF(width - 60, middle - 12, width - 16, middle + 12);
+
             graphics.round(
                 target, brush, track, 12, enabled ? (hover ? accent_hover_border_color : accent_color) : (hover ? 0x48444F : 0x343139));
+
             brush->SetColor(color(enabled ? background_color : text_color));
             target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(enabled ? width - 28 : width - 48, middle), 8, 8), brush);
         } else {
@@ -953,6 +1026,7 @@ struct App {
             target->DrawRoundedRectangle(frame, brush);
             std::array<wchar_t, 256> label{};
             GetWindowTextW(item.hwndItem, label.data(), static_cast<int>(label.size()));
+
             graphics.text(target,
                           brush,
                           label.data(),
@@ -962,6 +1036,7 @@ struct App {
                           DWRITE_TEXT_ALIGNMENT_CENTER,
                           true);
         }
+
         require(target->EndDraw());
     }
 
@@ -970,28 +1045,35 @@ struct App {
         ScreenToClient(window, &point);
         RECT area{};
         GetClientRect(window, &area);
+
         if (!IsZoomed(window)) {
             const int edge = px(6);
             const bool left = point.x < edge;
             const bool right = point.x >= area.right - edge;
             const bool top = point.y < edge;
             const bool bottom = point.y >= area.bottom - edge;
+
             if (top) {
                 return left ? HTTOPLEFT : right ? HTTOPRIGHT : HTTOP;
             }
+
             if (bottom) {
                 return left ? HTBOTTOMLEFT : right ? HTBOTTOMRIGHT : HTBOTTOM;
             }
+
             if (left) {
                 return HTLEFT;
             }
+
             if (right) {
                 return HTRIGHT;
             }
         }
+
         if (point.y < px(64) && ChildWindowFromPointEx(window, point, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED) == window) {
             return HTCAPTION;
         }
+
         return HTCLIENT;
     }
 
@@ -1000,6 +1082,7 @@ struct App {
             launch(first + static_cast<std::size_t>(id - card_base));
             return;
         }
+
         switch (id) {
         case settings_id:
             open_settings(!settings_open);
@@ -1051,6 +1134,7 @@ struct App {
             shortcut_matches = !executable.empty() && bnet::launcher_shortcut_matches(executable, settings);
             shortcut_installed = !executable.empty() && bnet::launcher_shortcut_enabled(executable);
         }
+
         SetWindowTextW(setting_buttons[2], shortcut_installed ? L"Launch when closed. On" : L"Launch when closed. Off");
         InvalidateRect(setting_buttons[2], nullptr, FALSE);
     }
@@ -1067,33 +1151,42 @@ struct App {
         }
 
         hotkey_registered = RegisterHotKey(window, active_hotkey_id, settings.hotkey_modifiers | MOD_NOREPEAT, settings.hotkey_key) != 0;
+
         if (!hotkey_registered && GetTickCount64() < hotkey_retry_until) {
             return;
         }
 
         KillTimer(window, 2);
         hotkey_retry_until = 0;
+
         if (shortcut_suspended) {
             const auto restored = bnet::install_launcher_shortcut(launcher_path(), settings);
+
             if (!restored) {
                 shortcut_suspended = false;
                 refresh_shortcut_state();
                 set_status(L"Launch when closed could not be restored. " + restored.error(), true);
                 return;
             }
+
             shortcut_suspended = false;
         }
+
         refresh_shortcut_state();
+
         set_status(hotkey_registered ? L"Your shortcut is ready." : L"That shortcut is still in use. Choose another key in settings.",
                    true);
+
         InvalidateRect(window, nullptr, FALSE);
     }
 
     void begin_hotkey_retry() {
         hotkey_retry_until = GetTickCount64() + 2000;
+
         if (!SetTimer(window, 2, 50, nullptr)) {
             hotkey_retry_until = GetTickCount64();
         }
+
         retry_hotkey();
     }
 
@@ -1101,23 +1194,29 @@ struct App {
         if (hotkey_registered || hotkey_retry_until || closing) {
             return;
         }
+
         SendMessageW(window, WM_SETHOTKEY, 0, 0);
         refresh_shortcut_state();
         hotkey_registered = RegisterHotKey(window, active_hotkey_id, settings.hotkey_modifiers | MOD_NOREPEAT, settings.hotkey_key) != 0;
+
         if (hotkey_registered) {
             return;
         }
+
         if (shortcut_matches) {
             const auto disabled = bnet::disable_launcher_shortcut(launcher_path());
+
             if (!disabled) {
                 set_status(disabled.error(), true);
                 return;
             }
+
             shortcut_suspended = true;
             set_status(L"Setting up your shortcut...", true);
             begin_hotkey_retry();
             return;
         }
+
         set_status(L"That shortcut is already in use. Choose another key in settings.", true);
     }
 
@@ -1152,9 +1251,11 @@ struct App {
             SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
             set_status(L"Shortcut unchanged.", true);
         }
+
         if (IsIconic(window) || IsZoomed(window)) {
             ShowWindow(window, SW_RESTORE);
         }
+
         center_window(false);
         selected = 0;
         first = 0;
@@ -1172,6 +1273,7 @@ struct App {
         } else {
             focus_selection();
         }
+
         RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
     }
 
@@ -1266,9 +1368,11 @@ struct App {
 
         const bool focus_first = (initial_scan || previous_count == 0) && !settings_open && IsWindowVisible(window) && !IsIconic(window) &&
                                  GetForegroundWindow() == window;
+
         initial_scan = false;
         refresh_running_games(true);
         update_cards();
+
         if (focus_first && !catalog.games.empty()) {
             focus_selection();
         }
@@ -1294,6 +1398,7 @@ struct App {
         set_status(L"");
         update_cards();
         SetTimer(window, 1, 30200, nullptr);
+
         try {
             launch_worker = std::jthread([this, request = std::move(request)](std::stop_token stop) {
                 bnet::LaunchResult result;
@@ -1362,23 +1467,28 @@ struct App {
         if (closing) {
             return;
         }
+
         closing = true;
         KillTimer(window, 2);
         KillTimer(window, 3);
         hotkey_retry_until = 0;
         refresh_shortcut_state();
         const auto executable = launcher_path();
+
         if (shortcut_installed) {
             static_cast<void>(bnet::disable_launcher_shortcut(executable));
             shortcut_suspended = true;
         }
+
         SendMessageW(window, WM_SETHOTKEY, 0, 0);
         UnregisterHotKey(window, active_hotkey_id);
         hotkey_registered = false;
+
         if (shortcut_suspended) {
             static_cast<void>(bnet::install_launcher_shortcut(executable, settings));
             shortcut_suspended = false;
         }
+
         launch_guard.cancel();
         KillTimer(window, 1);
         remove_tray();
@@ -1391,6 +1501,7 @@ struct App {
             set_status(L"Finishing shortcut setup. Try again in a moment.", true);
             return;
         }
+
         if (!bnet::valid_hotkey(replacement)) {
             set_status(L"Use Ctrl or Alt with a letter, number, or function key except F12.", true);
             return;
@@ -1398,12 +1509,14 @@ struct App {
 
         const bool changed = replacement.hotkey_key != settings.hotkey_key || replacement.hotkey_modifiers != settings.hotkey_modifiers;
         refresh_shortcut_state();
+
         if (!changed && (!shortcut_installed || shortcut_matches) && hotkey_registered && !shortcut_suspended) {
             set_status(L"This shortcut is already saved.", true);
             return;
         }
 
         const auto executable = launcher_path();
+
         if (shortcut_installed && executable.empty()) {
             set_status(L"Could not find the better-net application.", true);
             return;
@@ -1411,11 +1524,14 @@ struct App {
 
         if (!changed && !hotkey_registered) {
             register_hotkey();
+
             if (!hotkey_registered) {
                 return;
             }
         }
+
         const int replacement_id = active_hotkey_id == 1 ? 2 : 1;
+
         if (changed && !RegisterHotKey(window, replacement_id, replacement.hotkey_modifiers | MOD_NOREPEAT, replacement.hotkey_key)) {
             set_status(L"That shortcut is already in use. Try another key combination.", true);
             return;
@@ -1423,48 +1539,61 @@ struct App {
 
         if (shortcut_installed) {
             const auto created = bnet::install_launcher_shortcut(executable, replacement);
+
             if (!created) {
                 if (changed) {
                     UnregisterHotKey(window, replacement_id);
                 }
+
                 const auto restored = bnet::install_launcher_shortcut(executable, settings);
+
                 if (restored) {
                     shortcut_suspended = false;
                 }
+
                 refresh_shortcut_state();
                 set_status(created.error(), true);
                 return;
             }
+
             shortcut_suspended = false;
         }
 
         const auto saved = bnet::save_settings(replacement);
+
         if (!saved) {
             std::wstring error = saved.error();
+
             if (shortcut_installed) {
                 const auto restored = bnet::install_launcher_shortcut(executable, settings);
+
                 if (!restored) {
                     error += L" Launch when closed could not be restored. " + restored.error();
                 } else {
                     shortcut_suspended = false;
                 }
             }
+
             if (changed) {
                 UnregisterHotKey(window, replacement_id);
             }
+
             refresh_shortcut_state();
             set_status(error, true);
             return;
         }
+
         if (changed) {
             UnregisterHotKey(window, active_hotkey_id);
             active_hotkey_id = replacement_id;
             hotkey_registered = true;
         }
+
         settings = replacement;
         shortcut_suspended = false;
         SendMessageW(window, WM_SETHOTKEY, 0, 0);
         refresh_shortcut_state();
+
         set_status(shortcut_installed ? L"Saved. Shortcut can start better-net when it is closed."
                                       : L"Saved. Your shortcut works while better-net is running.",
                    true);
@@ -1475,11 +1604,13 @@ struct App {
             set_status(L"Finishing shortcut setup. Try again in a moment.", true);
             return;
         }
+
         recording = false;
         SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
         InvalidateRect(window, nullptr, FALSE);
         refresh_shortcut_state();
         const auto executable = launcher_path();
+
         if (executable.empty()) {
             set_status(L"Could not find the better-net application.", true);
             return;
@@ -1487,6 +1618,7 @@ struct App {
 
         if (!shortcut_installed && !hotkey_registered) {
             register_hotkey();
+
             if (!hotkey_registered) {
                 return;
             }
@@ -1496,20 +1628,27 @@ struct App {
             if (shortcut_installed) {
                 return bnet::disable_launcher_shortcut(executable);
             }
+
             const auto installed = bnet::install_launcher_shortcut(executable, settings);
+
             if (!installed) {
                 return std::unexpected(installed.error());
             }
+
             return {};
         }();
+
         if (updated) {
             shortcut_suspended = false;
             SendMessageW(window, WM_SETHOTKEY, 0, 0);
         }
+
         refresh_shortcut_state();
+
         if (updated && !hotkey_registered) {
             begin_hotkey_retry();
         }
+
         set_status(!updated             ? updated.error()
                    : shortcut_installed ? L"Shortcut can start better-net when it is closed."
                    : hotkey_registered  ? L"Your shortcut works while better-net is running."
@@ -1520,9 +1659,11 @@ struct App {
 
 LRESULT CALLBACK button_proc(HWND control, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR data) {
     auto& app = *reinterpret_cast<App*>(data);
+
     try {
         const int id = GetDlgCtrlID(control);
         const bool card = id >= card_base && id < card_base + 3;
+
         if (message == WM_MOUSEMOVE) {
             if (card) {
                 RECT area{};
@@ -1531,30 +1672,39 @@ LRESULT CALLBACK button_proc(HWND control, UINT message, WPARAM wparam, LPARAM l
                 const auto bounds = play_bounds(static_cast<float>(area.right) * scale, static_cast<float>(area.bottom) * scale);
                 const float x = static_cast<float>(GET_X_LPARAM(lparam)) * scale;
                 const float y = static_cast<float>(GET_Y_LPARAM(lparam)) * scale;
+
                 const auto play = IsWindowEnabled(control) && x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom
                                       ? control
                                       : nullptr;
+
                 if (app.hovered_play != play) {
                     const auto previous = app.hovered_play;
                     app.hovered_play = play;
+
                     if (previous) {
                         InvalidateRect(previous, nullptr, FALSE);
                     }
+
                     InvalidateRect(control, nullptr, FALSE);
                 }
             }
+
             if (app.hovered != control) {
                 const auto previous = app.hovered;
                 app.hovered = control;
+
                 if (previous) {
                     InvalidateRect(previous, nullptr, FALSE);
                 }
+
                 InvalidateRect(control, nullptr, FALSE);
                 TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, control, 0};
                 TrackMouseEvent(&tracking);
             }
+
             if (card && app.dragging && (wparam & MK_LBUTTON)) {
                 const int current = GET_X_LPARAM(lparam);
+
                 if (std::abs(current - app.drag_origin) > app.px(48)) {
                     app.select(current < app.drag_origin ? 1 : -1, false);
                     app.drag_origin = current;
@@ -1565,17 +1715,21 @@ LRESULT CALLBACK button_proc(HWND control, UINT message, WPARAM wparam, LPARAM l
             if (app.hovered_play == control) {
                 app.hovered_play = nullptr;
             }
+
             if (app.hovered == control) {
                 app.hovered = nullptr;
             }
+
             InvalidateRect(control, nullptr, FALSE);
         } else if (message == WM_ENABLE && !wparam && app.hovered_play == control) {
             app.hovered_play = nullptr;
             InvalidateRect(control, nullptr, FALSE);
         } else if (message == WM_SETFOCUS && card) {
             const auto index = app.first + static_cast<std::size_t>(id - card_base);
+
             if (index < app.catalog.games.size()) {
                 app.selected = index;
+
                 for (const auto item : app.cards) {
                     InvalidateRect(item, nullptr, FALSE);
                 }
@@ -1591,6 +1745,7 @@ LRESULT CALLBACK button_proc(HWND control, UINT message, WPARAM wparam, LPARAM l
             const bool suppress = app.dragged;
             app.dragging = false;
             app.dragged = false;
+
             if (suppress) {
                 ReleaseCapture();
                 SendMessageW(control, BM_SETSTATE, FALSE, 0);
@@ -1603,24 +1758,29 @@ LRESULT CALLBACK button_proc(HWND control, UINT message, WPARAM wparam, LPARAM l
     } catch (...) {
         app.set_status(L"An operation failed. Press F5 to try again.");
     }
+
     return DefSubclassProc(control, message, wparam, lparam);
 }
 
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     auto* app = reinterpret_cast<App*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+
     if (message == WM_NCCREATE) {
         app = static_cast<App*>(reinterpret_cast<CREATESTRUCTW*>(lparam)->lpCreateParams);
         app->window = window;
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
     }
+
     if (!app) {
         return DefWindowProcW(window, message, wparam, lparam);
     }
+
     try {
         if (message == app->taskbar_created) {
             app->add_tray();
             return 0;
         }
+
         switch (message) {
         case WM_NCCALCSIZE:
             if (wparam && IsZoomed(window)) {
@@ -1629,6 +1789,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
                 GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor);
                 reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam)->rgrc[0] = monitor.rcWork;
             }
+
             return 0;
         case WM_NCHITTEST:
             return app->hit_test(lparam);
@@ -1637,6 +1798,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
                 app->restore();
                 return 0;
             }
+
             break;
         case WM_PAINT:
             app->paint();
@@ -1648,22 +1810,28 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
                 app->refresh_running_games(true);
                 return 0;
             }
+
             if (app->graphics.window_target) {
                 app->graphics.window_target->Resize(D2D1::SizeU(LOWORD(lparam), HIWORD(lparam)));
             }
+
             if (app->status_control) {
                 app->layout();
                 app->refresh_running_games(true);
             }
+
             return 0;
         case WM_DPICHANGED:
             app->graphics.dpi = HIWORD(wparam);
             app->update_icons();
+
             if (app->graphics.window_target) {
                 app->graphics.window_target->SetDpi(static_cast<float>(app->graphics.dpi), static_cast<float>(app->graphics.dpi));
             }
+
             {
                 const auto area = reinterpret_cast<RECT*>(lparam);
+
                 SetWindowPos(window,
                              nullptr,
                              area->left,
@@ -1672,6 +1840,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
                              area->bottom - area->top,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
+
             app->update_font();
             app->layout();
             return 0;
@@ -1679,6 +1848,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             reinterpret_cast<MINMAXINFO*>(lparam)->ptMinTrackSize = POINT{
                 app->px(static_cast<float>(std::max(std::size_t{376}, 56 + bnet::visible_game_count(app->catalog.games.size()) * 216))),
                 app->px(540)};
+
             return 0;
         case WM_CTLCOLORSTATIC:
             SetTextColor(reinterpret_cast<HDC>(wparam), RGB(153, 149, 159));
@@ -1702,6 +1872,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             } else if (wparam == 3) {
                 app->refresh_running_games();
             }
+
             return 0;
         case catalog_ready:
             app->receive_catalog();
@@ -1728,13 +1899,16 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
                 SetForegroundWindow(window);
                 const auto command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, position.x, position.y, 0, window, nullptr);
                 DestroyMenu(menu);
+
                 if (command == 1) {
                     app->restore();
                 } else if (command == 2) {
                     app->shutdown();
                 }
+
                 PostMessageW(window, WM_NULL, 0, 0);
             }
+
             return 0;
         case WM_CLOSE:
             app->hide();
@@ -1743,6 +1917,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             if (wparam) {
                 app->shutdown();
             }
+
             return 0;
         case WM_DESTROY:
             PostQuitMessage(0);
@@ -1753,6 +1928,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
     } catch (...) {
         app->set_status(L"An operation failed. Press F5 or restart better-net.");
     }
+
     return DefWindowProcW(window, message, wparam, lparam);
 }
 
@@ -1762,8 +1938,10 @@ int run(HINSTANCE instance) {
     bool force_show = false;
     bool background_start = false;
     App app;
+
     for (int index = 1; index < argument_count; ++index) {
         const std::wstring_view argument(arguments[index]);
+
         if (argument == L"--dry-run") {
             app.dry_run = true;
         } else if (argument == L"--empty-library") {
@@ -1774,25 +1952,32 @@ int run(HINSTANCE instance) {
             background_start = true;
         }
     }
+
     LocalFree(arguments);
     HANDLE singleton = CreateMutexW(nullptr, FALSE, L"Local\\BetterNet.SingleInstance.1");
+
     if (!singleton) {
         return 1;
     }
+
     const bool existing_instance = GetLastError() == ERROR_ALREADY_EXISTS;
     const auto mutex = std::unique_ptr<void, decltype(&CloseHandle)>(singleton, &CloseHandle);
+
     if (existing_instance) {
         if (background_start && !force_show) {
             return 0;
         }
+
         if (const auto existing = FindWindowW(window_class, nullptr)) {
             DWORD process = 0;
             GetWindowThreadProcessId(existing, &process);
             AllowSetForegroundWindow(process);
             PostMessageW(existing, restore_message, 0, 0);
         }
+
         return 0;
     }
+
     app.graphics.initialize();
     WNDCLASSEXW definition{};
     definition.cbSize = sizeof(definition);
@@ -1804,6 +1989,7 @@ int run(HINSTANCE instance) {
     definition.lpszClassName = window_class;
     require(RegisterClassExW(&definition) ? S_OK : E_FAIL);
     app.graphics.dpi = GetDpiForSystem();
+
     app.window = CreateWindowExW(WS_EX_CONTROLPARENT,
                                  window_class,
                                  L"better-net",
@@ -1816,9 +2002,11 @@ int run(HINSTANCE instance) {
                                  nullptr,
                                  instance,
                                  &app);
+
     if (!app.window) {
         throw std::runtime_error("The launcher window could not be created.");
     }
+
     app.graphics.dpi = GetDpiForWindow(app.window);
     app.update_icons();
     const BOOL dark = TRUE;
@@ -1841,18 +2029,23 @@ int run(HINSTANCE instance) {
     app.center_window(true);
     app.scan();
     const bool start_hidden = (background_start || app.settings.start_hidden) && app.tray_added && !force_show;
+
     if (!start_hidden) {
         ShowWindow(app.window, SW_SHOW);
         ShowWindow(app.window, SW_SHOW);
         UpdateWindow(app.window);
     }
+
     if (!loaded.warning.empty()) {
         app.set_status(loaded.warning, true);
     }
+
     MSG message{};
+
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
         if (message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN) {
             const auto key = message.wParam;
+
             if (key == VK_ESCAPE) {
                 if (app.recording) {
                     app.recording = false;
@@ -1863,40 +2056,51 @@ int run(HINSTANCE instance) {
                 } else {
                     app.hide();
                 }
+
                 continue;
             }
+
             if (app.recording) {
                 app.record_key(key);
                 continue;
             }
+
             const bool plain_key = message.message == WM_KEYDOWN && GetKeyState(VK_SHIFT) >= 0 && GetKeyState(VK_CONTROL) >= 0 &&
                                    GetKeyState(VK_MENU) >= 0 && GetKeyState(VK_LWIN) >= 0 && GetKeyState(VK_RWIN) >= 0;
+
             if (!app.settings_open && plain_key && (key == VK_LEFT || key == VK_RIGHT || key == 'A' || key == 'D')) {
                 app.select(key == VK_LEFT || key == 'A' ? -1 : 1);
                 continue;
             }
+
             if (key == VK_RETURN) {
                 if ((message.lParam & (1LL << 30)) == 0) {
                     const auto focus = GetFocus();
+
                     if (focus && focus != app.window) {
                         SendMessageW(focus, BM_CLICK, 0, 0);
                     } else if (!app.settings_open) {
                         app.launch(app.selected);
                     }
                 }
+
                 continue;
             }
+
             if (!app.settings_open && key == VK_F5) {
                 app.scan();
                 continue;
             }
+
             if (key == VK_TAB && IsDialogMessageW(app.window, &message)) {
                 continue;
             }
         }
+
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+
     return static_cast<int>(message.wParam);
 }
 }
@@ -1906,6 +2110,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_WIN95_CLASSES};
     InitCommonControlsEx(&controls);
     int result = 1;
+
     try {
         result = run(instance);
     } catch (...) {
@@ -1914,8 +2119,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
                     L"better-net",
                     MB_OK | MB_ICONERROR);
     }
+
     if (SUCCEEDED(initialized)) {
         CoUninitialize();
     }
+
     return result;
 }

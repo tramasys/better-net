@@ -466,7 +466,6 @@ void registry_records(HKEY root,
                       Catalog& status,
                       std::stop_token cancellation) {
     HKEY raw = nullptr;
-
     const auto opened = RegOpenKeyExW(root, L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall", 0, KEY_READ | view, &raw);
 
     if (opened == ERROR_FILE_NOT_FOUND || opened == ERROR_PATH_NOT_FOUND) {
@@ -750,12 +749,10 @@ Catalog discover(std::stop_token cancellation) {
 
         const auto program_data = environment_path(L"ProgramData");
         std::error_code program_data_error;
-
         const bool valid_program_data = program_data.is_absolute() && std::filesystem::is_directory(program_data, program_data_error);
 
         if (!valid_program_data && !cancellation.stop_requested()) {
             status.scan_failed = true;
-
             status.warnings.push_back(L"Windows ProgramData is unavailable. Battle.net Agent records could not be scanned.");
         }
 
@@ -777,7 +774,6 @@ Catalog discover(std::stop_token cancellation) {
                     }
                 } else {
                     status.scan_failed = true;
-
                     status.warnings.push_back(L"Battle.net Agent records could not be read. Press F5 to rescan after updates finish.");
                 }
             } else if (error) {

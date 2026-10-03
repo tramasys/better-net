@@ -29,9 +29,7 @@ bool valid_hotkey(const Settings& settings) noexcept;
 std::wstring hotkey_text(const Settings& settings);
 std::filesystem::path settings_path();
 SettingsLoad load_settings(const std::filesystem::path& path = settings_path()) noexcept;
-
 std::expected<void, std::wstring> save_settings(const Settings& settings, const std::filesystem::path& path = settings_path()) noexcept;
-
 enum class LaunchStatus { requested, already_running, missing_client, missing_installation, invalid_descriptor, process_error, cancelled };
 
 struct LaunchResult {
@@ -55,9 +53,7 @@ struct PreparedLaunch {
 using ProcessAdapter = std::function<LaunchResult(const PreparedLaunch&)>;
 std::wstring quote_windows_argument(std::wstring_view value);
 std::expected<PreparedLaunch, LaunchResult> prepare_launch(const LaunchRequest& request);
-
 LaunchResult launch_game(const LaunchRequest& request, std::stop_token stop = {}, const ProcessAdapter& adapter = {}) noexcept;
-
 std::optional<std::vector<bool>> running_games(std::span<const Game> games, std::stop_token stop = {}) noexcept;
 
 class LaunchGuard {
@@ -88,9 +84,7 @@ std::expected<void, std::wstring> disable_launcher_shortcut_at(const std::filesy
                                                                const std::filesystem::path& shortcut_path) noexcept;
 
 std::expected<void, std::wstring> disable_launcher_shortcut(const std::filesystem::path& executable, bool desktop = false) noexcept;
-
 bool launcher_shortcut_matches(const std::filesystem::path& executable, const Settings& settings, bool desktop = false) noexcept;
-
 bool launcher_shortcut_enabled(const std::filesystem::path& executable, bool desktop = false) noexcept;
 bool startup_enabled(const std::filesystem::path& executable) noexcept;
 std::expected<void, std::wstring> set_startup_enabled(const std::filesystem::path& executable, bool enabled) noexcept;
