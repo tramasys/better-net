@@ -1011,7 +1011,7 @@ struct App
         const auto updated = bnet::set_startup_enabled(launcher_path(), !startup_enabled);
         refresh_startup_state();
         set_status(!updated          ? updated.error()
-                   : startup_enabled ? L"Starts quietly with Windows. The shortcut will be ready."
+                   : startup_enabled ? L"Starts quietly with Windows."
                                      : L"Startup is off.",
                    true);
         InvalidateRect(window, nullptr, FALSE);
