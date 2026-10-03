@@ -60,6 +60,11 @@ D2D1_COLOR_F color(UINT32 value, float alpha = 1.0F)
     return D2D1::ColorF(value, alpha);
 }
 
+D2D1_RECT_F play_bounds(float width, float height)
+{
+    return D2D1::RectF(20, height - 54, width - 20, height - 14);
+}
+
 struct Pixels
 {
     UINT width = 0;
@@ -253,6 +258,7 @@ struct App
     HWND window = nullptr;
     HWND status_control = nullptr;
     HWND hovered = nullptr;
+    HWND hovered_play = nullptr;
     std::array<HWND, 3> cards{};
     std::array<HWND, 3> caption_buttons{};
     std::array<HWND, 4> setting_buttons{};
@@ -447,6 +453,11 @@ struct App
 
     void layout()
     {
+        if (hovered_play)
+        {
+            InvalidateRect(hovered_play, nullptr, FALSE);
+            hovered_play = nullptr;
+        }
         const auto [width, height] = client_size();
         const auto move = [this](HWND control, float x, float y, float w, float h, bool visible)
         {
@@ -767,17 +778,31 @@ struct App
                               muted_color);
                 graphics.round(target,
                                brush,
-                               D2D1::RectF(20, height - 54, width - 20, height - 14),
+                               play_bounds(width, height),
                                7,
-                               down                                      ? 0x453958
-                               : (hover || focused || index == selected) ? accent_surface
-                                                                         : 0x27252E);
+                               down                                                              ? 0x453958
+                               : hovered_play == item.hwndItem && IsWindowEnabled(item.hwndItem) ? 0x554574
+                               : (hover || focused || index == selected)                         ? accent_surface
+                                                                                                 : 0x27252E);
+                const bool play_hover = hovered_play == item.hwndItem && IsWindowEnabled(item.hwndItem);
+                if (play_hover)
+                {
+                    const auto bounds = play_bounds(width, height);
+                    brush->SetColor(color(0x9E8DCA));
+                    target->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(bounds.left + 0.5F,
+                                                                               bounds.top + 0.5F,
+                                                                               bounds.right - 0.5F,
+                                                                               bounds.bottom - 0.5F),
+                                                                   7,
+                                                                   7),
+                                                 brush);
+                }
                 graphics.text(target,
                               brush,
                               launch_running && index == launching_index ? L"Opening..." : L"Play",
                               D2D1::RectF(36, height - 54, width - 36, height - 14),
                               1,
-                              0xD5CBF4,
+                              play_hover ? text_color : 0xD5CBF4,
                               DWRITE_TEXT_ALIGNMENT_CENTER,
                               true);
             }
@@ -1293,6 +1318,30 @@ LRESULT CALLBACK button_proc(HWND control, UINT message, WPARAM wparam, LPARAM l
         const bool card = id >= card_base && id < card_base + 3;
         if (message == WM_MOUSEMOVE)
         {
+            if (card)
+            {
+                RECT area{};
+                GetClientRect(control, &area);
+                const float scale = 96.0F / static_cast<float>(app.graphics.dpi);
+                const auto bounds =
+                    play_bounds(static_cast<float>(area.right) * scale, static_cast<float>(area.bottom) * scale);
+                const float x = static_cast<float>(GET_X_LPARAM(lparam)) * scale;
+                const float y = static_cast<float>(GET_Y_LPARAM(lparam)) * scale;
+                const auto play = IsWindowEnabled(control) && x >= bounds.left && x < bounds.right && y >= bounds.top &&
+                                          y < bounds.bottom
+                                      ? control
+                                      : nullptr;
+                if (app.hovered_play != play)
+                {
+                    const auto previous = app.hovered_play;
+                    app.hovered_play = play;
+                    if (previous)
+                    {
+                        InvalidateRect(previous, nullptr, FALSE);
+                    }
+                    InvalidateRect(control, nullptr, FALSE);
+                }
+            }
             if (app.hovered != control)
             {
                 const auto previous = app.hovered;
@@ -1318,10 +1367,19 @@ LRESULT CALLBACK button_proc(HWND control, UINT message, WPARAM wparam, LPARAM l
         }
         else if (message == WM_MOUSELEAVE)
         {
+            if (app.hovered_play == control)
+            {
+                app.hovered_play = nullptr;
+            }
             if (app.hovered == control)
             {
                 app.hovered = nullptr;
             }
+            InvalidateRect(control, nullptr, FALSE);
+        }
+        else if (message == WM_ENABLE && !wparam && app.hovered_play == control)
+        {
+            app.hovered_play = nullptr;
             InvalidateRect(control, nullptr, FALSE);
         }
         else if (message == WM_SETFOCUS && card)
