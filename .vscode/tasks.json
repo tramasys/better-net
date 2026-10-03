@@ -8,6 +8,14 @@
             "args": ["--build", "--preset", "release"],
             "group": { "kind": "build", "isDefault": true },
             "problemMatcher": ["$msCompile"]
+        },
+        {
+            "label": "Build Installer",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--build", "--preset", "release", "--target", "installer"],
+            "group": "build",
+            "problemMatcher": ["$msCompile"]
         }
     ]
 }

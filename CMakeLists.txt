@@ -48,3 +48,21 @@ if(BUILD_TESTING)
 endif()
 
 install(TARGETS better-net RUNTIME DESTINATION .)
+
+find_program(BETTER_NET_ISCC NAMES ISCC
+    HINTS "${CMAKE_SOURCE_DIR}/.cache/inno-setup-7.1.0"
+          "$ENV{LOCALAPPDATA}/Programs/Inno Setup 7"
+          "$ENV{ProgramFiles}/Inno Setup 7")
+
+if(BETTER_NET_ISCC)
+    add_custom_target(installer
+        COMMAND "${BETTER_NET_ISCC}"
+            "/DAppVersion=${PROJECT_VERSION}"
+            "/DAppBinary=$<TARGET_FILE:better-net>"
+            "/O${CMAKE_SOURCE_DIR}/dist/installer"
+            "${CMAKE_SOURCE_DIR}/installer.iss"
+        DEPENDS better-net
+        VERBATIM)
+else()
+    message(STATUS "Install Inno Setup 7.1.0 to enable the installer target")
+endif()

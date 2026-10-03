@@ -29,6 +29,7 @@ constexpr UINT launch_ready = WM_APP + 2;
 constexpr UINT tray_message = WM_APP + 3;
 constexpr UINT restore_message = WM_APP + 4;
 constexpr UINT processes_ready = WM_APP + 5;
+constexpr UINT shutdown_message = WM_APP + 6;
 constexpr int app_icon_resource = 101;
 constexpr int app_logo_resource = 102;
 constexpr int settings_id = 101;
@@ -1145,6 +1146,50 @@ struct App {
         return length > 0 && length < executable.size() ? std::filesystem::path(executable.data()) : std::filesystem::path{};
     }
 
+    int quit() noexcept {
+        try {
+            const auto executable = launcher_path();
+
+            if (executable.empty()) {
+                return 1;
+            }
+
+            if (const auto existing = FindWindowW(window_class, nullptr)) {
+                DWORD process_id = 0;
+
+                if (!GetWindowThreadProcessId(existing, &process_id)) {
+                    return 1;
+                }
+
+                const std::unique_ptr<void, decltype(&CloseHandle)> process(
+                    OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, process_id), CloseHandle);
+
+                std::array<wchar_t, 32768> image{};
+                DWORD length = static_cast<DWORD>(image.size());
+
+                if (!process || !QueryFullProcessImageNameW(process.get(), 0, image.data(), &length)) {
+                    return 1;
+                }
+
+                const auto current_path = std::filesystem::weakly_canonical(executable);
+
+                const auto existing_path =
+                    std::filesystem::weakly_canonical(std::filesystem::path(std::wstring_view(image.data(), length)));
+
+                if (CompareStringOrdinal(current_path.c_str(), -1, existing_path.c_str(), -1, TRUE) == CSTR_EQUAL) {
+                    if (!PostMessageW(existing, shutdown_message, process_id, 0) ||
+                        WaitForSingleObject(process.get(), 10000) != WAIT_OBJECT_0) {
+                        return 1;
+                    }
+                }
+            }
+
+            return 0;
+        } catch (...) {
+            return 1;
+        }
+    }
+
     void retry_hotkey() {
         if (closing || !hotkey_retry_until) {
             return;
@@ -1883,6 +1928,12 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         case processes_ready:
             app->receive_running_games();
             return 0;
+        case shutdown_message:
+            if (wparam == GetCurrentProcessId()) {
+                app->shutdown();
+            }
+
+            return 0;
         case restore_message:
         case WM_HOTKEY:
             app->restore();
@@ -1935,8 +1986,14 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
 int run(HINSTANCE instance) {
     int argument_count = 0;
     auto* arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
+
+    if (!arguments) {
+        return 1;
+    }
+
     bool force_show = false;
     bool background_start = false;
+    bool quit = false;
     App app;
 
     for (int index = 1; index < argument_count; ++index) {
@@ -1950,10 +2007,17 @@ int run(HINSTANCE instance) {
             force_show = true;
         } else if (argument == L"--background") {
             background_start = true;
+        } else if (argument == L"--quit") {
+            quit = true;
         }
     }
 
     LocalFree(arguments);
+
+    if (quit) {
+        return app.quit();
+    }
+
     HANDLE singleton = CreateMutexW(nullptr, FALSE, L"Local\\BetterNet.SingleInstance.1");
 
     if (!singleton) {
