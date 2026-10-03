@@ -46,6 +46,8 @@ constexpr UINT32 text_color = 0xF2F0F5;
 constexpr UINT32 muted_color = 0x99959F;
 constexpr UINT32 accent_color = 0xAB9DF2;
 constexpr UINT32 accent_surface = 0x302A42;
+constexpr UINT32 accent_hover_color = 0x554574;
+constexpr UINT32 accent_hover_border_color = 0x9E8DCA;
 
 void require(HRESULT result)
 {
@@ -781,14 +783,14 @@ struct App
                                play_bounds(width, height),
                                7,
                                down                                                              ? 0x453958
-                               : hovered_play == item.hwndItem && IsWindowEnabled(item.hwndItem) ? 0x554574
+                               : hovered_play == item.hwndItem && IsWindowEnabled(item.hwndItem) ? accent_hover_color
                                : (hover || focused || index == selected)                         ? accent_surface
                                                                                                  : 0x27252E);
                 const bool play_hover = hovered_play == item.hwndItem && IsWindowEnabled(item.hwndItem);
                 if (play_hover)
                 {
                     const auto bounds = play_bounds(width, height);
-                    brush->SetColor(color(0x9E8DCA));
+                    brush->SetColor(color(accent_hover_border_color));
                     target->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(bounds.left + 0.5F,
                                                                                bounds.top + 0.5F,
                                                                                bounds.right - 0.5F,
@@ -841,13 +843,15 @@ struct App
         }
         else
         {
+            const bool save_hover = item.CtlID == save_id && hover && IsWindowEnabled(item.hwndItem);
             const auto frame = D2D1::RoundedRect(D2D1::RectF(0.75F, 0.75F, width - 0.75F, height - 0.75F), 8, 8);
             brush->SetColor(color(down                    ? 0x453958
+                                  : save_hover            ? accent_hover_color
                                   : item.CtlID == save_id ? accent_surface
                                   : hover                 ? 0x242227
                                                           : surface_color));
             target->FillRoundedRectangle(frame, brush);
-            brush->SetColor(color(focused ? accent_color : border_color));
+            brush->SetColor(color(save_hover ? accent_hover_border_color : focused ? accent_color : border_color));
             target->DrawRoundedRectangle(frame, brush);
             std::array<wchar_t, 256> label{};
             GetWindowTextW(item.hwndItem, label.data(), static_cast<int>(label.size()));
@@ -856,7 +860,7 @@ struct App
                           label.data(),
                           D2D1::RectF(16, 0, width - 16, height),
                           item.CtlID == hotkey_id ? 2 : 1,
-                          item.CtlID == save_id ? 0xD5CBF4 : text_color,
+                          item.CtlID == save_id && !save_hover ? 0xD5CBF4 : text_color,
                           DWRITE_TEXT_ALIGNMENT_CENTER,
                           true);
         }
