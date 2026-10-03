@@ -8,7 +8,7 @@ $reportPath = Join-Path (Split-Path -Parent $executablePath) 'performance.json'
 
 if (Get-Process -Name 'better-net' -ErrorAction SilentlyContinue)
 {
-    throw 'Exit Better Net before measuring its startup and idle usage.'
+    throw 'Exit better-net before measuring its startup and idle usage.'
 }
 
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()

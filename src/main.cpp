@@ -440,7 +440,7 @@ struct App
         data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
         data.uCallbackMessage = tray_message;
         data.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-        wcscpy_s(data.szTip, L"Better Net - open your games");
+        wcscpy_s(data.szTip, L"better-net - open your games");
         tray_added = Shell_NotifyIconW(NIM_ADD, &data) != FALSE;
     }
 
@@ -728,7 +728,7 @@ struct App
             target->Clear(color(0x12151D));
             graphics.round(target, brush, D2D1::RectF(36, 32, 64, 60), 8, 0xB1F18A);
             graphics.text(target, brush, L"b", D2D1::RectF(44, 31, 64, 61), 2, 0x172119);
-            graphics.text(target, brush, L"better net", D2D1::RectF(76, 33, 300, 61), 2, 0xEFF2F8);
+            graphics.text(target, brush, L"better-net", D2D1::RectF(76, 33, 300, 61), 2, 0xEFF2F8);
             graphics.text(target, brush, L"Your games.", D2D1::RectF(36, 78, size.width - 36, 129), 4, 0xF1F3F9);
             graphics.text(target, brush, count_text, D2D1::RectF(39, 128, size.width - 36, 148), 0, 0x8D96AA);
 
@@ -755,7 +755,7 @@ struct App
             RECT area{30, 30, 700, 150};
 
             DrawTextW(paint_info.hdc,
-                      L"Graphics initialization failed. Close Better Net and try again.",
+                      L"Graphics initialization failed. Close better-net and try again.",
                       -1,
                       &area,
                       DT_LEFT | DT_WORDBREAK);
@@ -944,7 +944,7 @@ struct App
             details = L"Local installation records were read successfully.";
         }
 
-        MessageBoxW(window, details.c_str(), L"Better Net - scan details", MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(window, details.c_str(), L"better-net - scan details", MB_OK | MB_ICONINFORMATION);
     }
 
     void write_diagnostics()
@@ -1076,7 +1076,7 @@ void App::open_settings()
 
     settings_window = CreateWindowExW(WS_EX_CONTROLPARENT,
                                       settings_class,
-                                      L"Better Net - keyboard shortcut",
+                                      L"better-net - keyboard shortcut",
                                       WS_CAPTION | WS_SYSMENU | WS_POPUP,
                                       owner.left + px(180),
                                       owner.top + px(110),
@@ -1112,7 +1112,7 @@ void App::open_settings()
         return control;
     };
 
-    label(L"Open Better Net from anywhere", 24, 22, 500, 26);
+    label(L"Open better-net from anywhere", 24, 22, 500, 26);
     label(L"Press Ctrl or Alt with a letter, number, or function key (except F12).", 24, 59, 520, 27);
 
     hotkey_control = CreateWindowExW(WS_EX_CLIENTEDGE,
@@ -1135,7 +1135,7 @@ void App::open_settings()
     SendMessageW(hotkey_control, HKM_SETHOTKEY, MAKEWORD(settings.hotkey_key, modifiers), 0);
     SendMessageW(hotkey_control, WM_SETFONT, reinterpret_cast<WPARAM>(control_font), TRUE);
 
-    label(L"Save keeps it active while Better Net runs in the tray.\n"
+    label(L"Save keeps it active while better-net runs in the tray.\n"
           L"Create Windows shortcut also enables starting it when closed.",
           24,
           141,
@@ -1209,7 +1209,7 @@ void App::save_shortcut(bool install)
         register_hotkey();
 
         SetWindowTextW(settings_status,
-                       created ? L"Windows shortcut created in Start. This key can now start Better Net when closed."
+                       created ? L"Windows shortcut created in Start. This key can now start better-net when closed."
                                : created.error().c_str());
     }
     else
@@ -1217,7 +1217,7 @@ void App::save_shortcut(bool install)
         register_hotkey();
 
         SetWindowTextW(settings_status,
-                       hotkey_registered ? L"Saved. Your shortcut opens Better Net while it runs."
+                       hotkey_registered ? L"Saved. Your shortcut opens better-net while it runs."
                                          : L"Saved, but Windows already owns this shortcut.");
     }
 }
@@ -1405,7 +1405,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             else if (lparam == WM_RBUTTONUP)
             {
                 HMENU menu = CreatePopupMenu();
-                AppendMenuW(menu, MF_STRING, 1, L"Open Better Net");
+                AppendMenuW(menu, MF_STRING, 1, L"Open better-net");
                 AppendMenuW(menu, MF_STRING, 2, L"Exit");
                 POINT position{};
                 GetCursorPos(&position);
@@ -1452,7 +1452,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
     }
     catch (...)
     {
-        app->set_status(L"An operation failed. Try Refresh or restart Better Net.");
+        app->set_status(L"An operation failed. Try Refresh or restart better-net.");
     }
 
     return DefWindowProcW(window, message, wparam, lparam);
@@ -1528,7 +1528,7 @@ int run(HINSTANCE instance)
 
     app.window = CreateWindowExW(WS_EX_CONTROLPARENT,
                                  window_class,
-                                 L"Better Net",
+                                 L"better-net",
                                  WS_OVERLAPPEDWINDOW,
                                  CW_USEDEFAULT,
                                  CW_USEDEFAULT,
@@ -1660,8 +1660,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
     catch (...)
     {
         MessageBoxW(nullptr,
-                    L"Better Net could not start. Windows graphics or local settings may be unavailable.",
-                    L"Better Net",
+                    L"better-net could not start. Windows graphics or local settings may be unavailable.",
+                    L"better-net",
                     MB_OK | MB_ICONERROR);
     }
 

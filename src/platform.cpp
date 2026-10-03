@@ -639,7 +639,7 @@ std::expected<void, std::wstring> create_launcher_shortcut(const std::filesystem
 
         if (SUCCEEDED(result))
         {
-            result = link->SetDescription(L"Open Better Net");
+            result = link->SetDescription(L"Open better-net");
         }
 
         if (SUCCEEDED(result))
@@ -715,7 +715,7 @@ install_launcher_shortcut(const std::filesystem::path& executable, const Setting
             return std::unexpected(L"Windows could not locate your shortcut directory.");
         }
 
-        const auto destination = folder / L"Better Net.lnk";
+        const auto destination = folder / L"better-net.lnk";
         const auto result = create_launcher_shortcut(executable, destination, settings);
 
         if (!result)
@@ -771,7 +771,7 @@ bool launcher_shortcut_matches(const std::filesystem::path& executable, const Se
                                     CLSCTX_INPROC_SERVER,
                                     IID_IShellLinkW,
                                     reinterpret_cast<void**>(link.GetAddressOf()))) ||
-            FAILED(link.As(&persistence)) || FAILED(persistence->Load((folder / L"Better Net.lnk").c_str(), STGM_READ)))
+            FAILED(link.As(&persistence)) || FAILED(persistence->Load((folder / L"better-net.lnk").c_str(), STGM_READ)))
         {
             return false;
         }
