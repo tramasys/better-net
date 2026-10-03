@@ -109,4 +109,6 @@ bool launcher_shortcut_matches(const std::filesystem::path& executable,
                                bool desktop = false) noexcept;
 
 bool launcher_shortcut_enabled(const std::filesystem::path& executable, bool desktop = false) noexcept;
+bool startup_enabled(const std::filesystem::path& executable) noexcept;
+std::expected<void, std::wstring> set_startup_enabled(const std::filesystem::path& executable, bool enabled) noexcept;
 }

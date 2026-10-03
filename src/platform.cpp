@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -17,6 +18,40 @@ namespace bnet
 {
 namespace
 {
+constexpr wchar_t startup_key[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+using RegistryHandle = std::unique_ptr<std::remove_pointer_t<HKEY>, decltype(&RegCloseKey)>;
+
+LSTATUS read_startup_command(HKEY key, std::wstring& command)
+{
+    std::array<wchar_t, 261> buffer{};
+    DWORD bytes = static_cast<DWORD>(sizeof(buffer));
+    DWORD type = 0;
+
+    const auto result =
+        RegQueryValueExW(key, L"better-net", nullptr, &type, reinterpret_cast<BYTE*>(buffer.data()), &bytes);
+
+    if (result != ERROR_SUCCESS)
+    {
+        return result;
+    }
+
+    if (type != REG_SZ || bytes < sizeof(wchar_t) || bytes % sizeof(wchar_t) != 0 ||
+        buffer[bytes / sizeof(wchar_t) - 1] != L'\0')
+    {
+        return ERROR_INVALID_DATA;
+    }
+
+    const std::wstring_view value(buffer.data(), bytes / sizeof(wchar_t) - 1);
+
+    if (value.find(L'\0') != std::wstring_view::npos)
+    {
+        return ERROR_INVALID_DATA;
+    }
+
+    command = value;
+    return ERROR_SUCCESS;
+}
+
 class Handle
 {
 public:
@@ -936,6 +971,127 @@ bool launcher_shortcut_enabled(const std::filesystem::path& executable, bool des
     catch (...)
     {
         return false;
+    }
+}
+
+bool startup_enabled(const std::filesystem::path& executable) noexcept
+{
+    try
+    {
+        if (!executable.is_absolute())
+        {
+            return false;
+        }
+
+        HKEY raw = nullptr;
+
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, startup_key, 0, KEY_QUERY_VALUE, &raw) != ERROR_SUCCESS)
+        {
+            return false;
+        }
+
+        const RegistryHandle key(raw, RegCloseKey);
+        std::wstring current;
+
+        return read_startup_command(key.get(), current) == ERROR_SUCCESS &&
+               current == quote_windows_argument(executable.native()) + L" --background";
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+std::expected<void, std::wstring> set_startup_enabled(const std::filesystem::path& executable, bool enabled) noexcept
+{
+    try
+    {
+        if (!executable.is_absolute())
+        {
+            return std::unexpected(L"The launcher path must be absolute to change Windows startup.");
+        }
+
+        const auto command = quote_windows_argument(executable.native()) + L" --background";
+
+        if (enabled)
+        {
+            std::error_code error;
+            DWORD binary_type = 0;
+
+            if (!std::filesystem::is_regular_file(executable, error) ||
+                !GetBinaryTypeW(executable.c_str(), &binary_type))
+            {
+                return std::unexpected(L"The launcher executable could not be found or validated.");
+            }
+
+            if (command.size() > 260)
+            {
+                return std::unexpected(
+                    L"The launcher path is too long for Windows startup. Move it to a shorter path.");
+            }
+        }
+
+        HKEY raw = nullptr;
+
+        const auto opened =
+            enabled ? RegCreateKeyExW(HKEY_CURRENT_USER,
+                                      startup_key,
+                                      0,
+                                      nullptr,
+                                      0,
+                                      KEY_QUERY_VALUE | KEY_SET_VALUE,
+                                      nullptr,
+                                      &raw,
+                                      nullptr)
+                    : RegOpenKeyExW(HKEY_CURRENT_USER, startup_key, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, &raw);
+
+        if (!enabled && (opened == ERROR_FILE_NOT_FOUND || opened == ERROR_PATH_NOT_FOUND))
+        {
+            return {};
+        }
+
+        if (opened != ERROR_SUCCESS)
+        {
+            return std::unexpected(L"Windows startup settings could not be opened: " + windows_error(opened));
+        }
+
+        const RegistryHandle key(raw, RegCloseKey);
+        std::wstring current;
+        const auto read = read_startup_command(key.get(), current);
+
+        if (read != ERROR_SUCCESS && read != ERROR_FILE_NOT_FOUND)
+        {
+            return std::unexpected(L"The existing Windows startup entry could not be read: " + windows_error(read));
+        }
+
+        if (read == ERROR_SUCCESS && current != command)
+        {
+            return std::unexpected(L"The better-net startup entry belongs to another command and was left unchanged.");
+        }
+
+        if ((enabled && read == ERROR_SUCCESS) || (!enabled && read == ERROR_FILE_NOT_FOUND))
+        {
+            return {};
+        }
+
+        const auto result = enabled ? RegSetValueExW(key.get(),
+                                                     L"better-net",
+                                                     0,
+                                                     REG_SZ,
+                                                     reinterpret_cast<const BYTE*>(command.c_str()),
+                                                     static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)))
+                                    : RegDeleteValueW(key.get(), L"better-net");
+
+        if (result != ERROR_SUCCESS)
+        {
+            return std::unexpected(L"Windows startup settings could not be changed: " + windows_error(result));
+        }
+
+        return {};
+    }
+    catch (...)
+    {
+        return std::unexpected(L"Windows startup settings could not be changed.");
     }
 }
 }
