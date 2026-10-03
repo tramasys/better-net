@@ -120,24 +120,16 @@ std::filesystem::path temporary_path(const std::filesystem::path& destination)
 
 std::expected<void, std::wstring> save_shell_link(IPersistFile& persistence, const std::filesystem::path& path)
 {
-    const auto temporary = temporary_path(path);
-    TemporaryFile cleanup(temporary);
-    const HRESULT result = persistence.Save(temporary.c_str(), TRUE);
+    const bool replacing = GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+    const HRESULT result = persistence.Save(path.c_str(), TRUE);
 
-    if (FAILED(result))
+    if (result != S_OK)
     {
         return std::unexpected(L"Windows could not save the launcher shortcut: " +
                                windows_error(static_cast<DWORD>(result)));
     }
 
-    const bool replacing = GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
-
-    if (!MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-    {
-        return std::unexpected(L"The shortcut could not be saved: " + windows_error(GetLastError()));
-    }
-
-    cleanup.release();
+    persistence.SaveCompleted(path.c_str());
     SHChangeNotify(replacing ? SHCNE_UPDATEITEM : SHCNE_CREATE, SHCNF_PATHW | SHCNF_FLUSH, path.c_str(), nullptr);
     return {};
 }
