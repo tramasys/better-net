@@ -25,15 +25,13 @@ LSTATUS read_startup_command(HKEY key, std::wstring& command) {
     DWORD bytes = static_cast<DWORD>(sizeof(buffer));
     DWORD type = 0;
 
-    const auto result =
-        RegQueryValueExW(key, L"better-net", nullptr, &type, reinterpret_cast<BYTE*>(buffer.data()), &bytes);
+    const auto result = RegQueryValueExW(key, L"better-net", nullptr, &type, reinterpret_cast<BYTE*>(buffer.data()), &bytes);
 
     if (result != ERROR_SUCCESS) {
         return result;
     }
 
-    if (type != REG_SZ || bytes < sizeof(wchar_t) || bytes % sizeof(wchar_t) != 0 ||
-        buffer[bytes / sizeof(wchar_t) - 1] != L'\0') {
+    if (type != REG_SZ || bytes < sizeof(wchar_t) || bytes % sizeof(wchar_t) != 0 || buffer[bytes / sizeof(wchar_t) - 1] != L'\0') {
         return ERROR_INVALID_DATA;
     }
 
@@ -138,8 +136,7 @@ std::expected<void, std::wstring> save_shell_link(IPersistFile& persistence, con
     const HRESULT result = persistence.Save(path.c_str(), TRUE);
 
     if (result != S_OK) {
-        return std::unexpected(L"Windows could not save the launcher shortcut: " +
-                               windows_error(static_cast<DWORD>(result)));
+        return std::unexpected(L"Windows could not save the launcher shortcut: " + windows_error(static_cast<DWORD>(result)));
     }
 
     persistence.SaveCompleted(path.c_str());
@@ -163,8 +160,7 @@ std::expected<void, std::wstring> atomic_write(const std::filesystem::path& path
     TemporaryFile cleanup(temporary);
 
     {
-        const HANDLE file =
-            CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+        const HANDLE file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 
         if (file == INVALID_HANDLE_VALUE) {
             return std::unexpected(L"Settings could not be written: " + windows_error(GetLastError()));
@@ -173,8 +169,8 @@ std::expected<void, std::wstring> atomic_write(const std::filesystem::path& path
         const Handle handle(file);
         DWORD written = 0;
 
-        if (!WriteFile(file, content.data(), static_cast<DWORD>(content.size()), &written, nullptr) ||
-            written != content.size() || !FlushFileBuffers(file)) {
+        if (!WriteFile(file, content.data(), static_cast<DWORD>(content.size()), &written, nullptr) || written != content.size() ||
+            !FlushFileBuffers(file)) {
             return std::unexpected(L"Settings could not be saved: " + windows_error(GetLastError()));
         }
     }
@@ -286,8 +282,7 @@ LaunchResult create_process(const PreparedLaunch& launch) {
 bool valid_hotkey(const Settings& settings) noexcept {
     const auto key = settings.hotkey_key;
 
-    const bool supported_key =
-        (key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || (key >= VK_F1 && key <= VK_F24 && key != VK_F12);
+    const bool supported_key = (key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || (key >= VK_F1 && key <= VK_F24 && key != VK_F12);
 
     return (settings.hotkey_modifiers & ~7U) == 0 && (settings.hotkey_modifiers & 3U) != 0 && supported_key;
 }
@@ -425,14 +420,12 @@ std::expected<PreparedLaunch, LaunchResult> prepare_launch(const LaunchRequest& 
             return (character >= L'A' && character <= L'Z') || (character >= L'a' && character <= L'z') ||
                    (character >= L'0' && character <= L'9') || character == L'_';
         })) {
-        return std::unexpected(
-            LaunchResult{LaunchStatus::invalid_descriptor, L"This installation has no verified launch route.", 0});
+        return std::unexpected(LaunchResult{LaunchStatus::invalid_descriptor, L"This installation has no verified launch route.", 0});
     }
 
     if (!validate_game(request.game)) {
-        return std::unexpected(LaunchResult{LaunchStatus::missing_installation,
-                                            L"The game installation changed or is missing. Press F5 to rescan.",
-                                            0});
+        return std::unexpected(
+            LaunchResult{LaunchStatus::missing_installation, L"The game installation changed or is missing. Press F5 to rescan.", 0});
     }
 
     PreparedLaunch prepared;
@@ -453,15 +446,15 @@ std::expected<PreparedLaunch, LaunchResult> prepare_launch(const LaunchRequest& 
     std::error_code error;
 
     if (!request.client_path.is_absolute() || !std::filesystem::is_regular_file(request.client_path, error)) {
-        return std::unexpected(LaunchResult{
-            LaunchStatus::missing_client, L"Battle.net is missing. Install or repair it, then press F5 to rescan.", 0});
+        return std::unexpected(
+            LaunchResult{LaunchStatus::missing_client, L"Battle.net is missing. Install or repair it, then press F5 to rescan.", 0});
     }
 
     prepared.application = request.client_path;
     prepared.working_directory = request.client_path.parent_path();
 
-    prepared.command_line = quote_windows_argument(request.client_path.native()) + L" --exec=" +
-                            quote_windows_argument(L"launch " + *expected_code);
+    prepared.command_line =
+        quote_windows_argument(request.client_path.native()) + L" --exec=" + quote_windows_argument(L"launch " + *expected_code);
 
     return prepared;
 }
@@ -554,12 +547,10 @@ std::optional<std::vector<bool>> running_games(std::span<const Game> games, std:
                 DWORD length = static_cast<DWORD>(image_path.size());
 
                 if (process != nullptr && QueryFullProcessImageNameW(process, 0, image_path.data(), &length)) {
-                    const auto executable =
-                        normalize(std::filesystem::path(std::wstring_view(image_path.data(), length)));
+                    const auto executable = normalize(std::filesystem::path(std::wstring_view(image_path.data(), length)));
 
                     for (std::size_t index = 0; index < executables.size(); ++index) {
-                        if (CompareStringOrdinal(executables[index].c_str(), -1, executable.c_str(), -1, TRUE) ==
-                            CSTR_EQUAL) {
+                        if (CompareStringOrdinal(executables[index].c_str(), -1, executable.c_str(), -1, TRUE) == CSTR_EQUAL) {
                             running[index] = true;
                         }
                     }
@@ -619,9 +610,8 @@ std::expected<void, std::wstring> create_launcher_shortcut(const std::filesystem
     try {
         std::error_code error;
 
-        if (!valid_hotkey(settings) || !executable.is_absolute() ||
-            !std::filesystem::is_regular_file(executable, error) || !shortcut_path.is_absolute() ||
-            shortcut_path.extension() != L".lnk") {
+        if (!valid_hotkey(settings) || !executable.is_absolute() || !std::filesystem::is_regular_file(executable, error) ||
+            !shortcut_path.is_absolute() || shortcut_path.extension() != L".lnk") {
             return std::unexpected(L"The launcher path or shortcut key is invalid.");
         }
 
@@ -650,11 +640,8 @@ std::expected<void, std::wstring> create_launcher_shortcut(const std::filesystem
         const Apartment apartment{SUCCEEDED(initialized)};
         Microsoft::WRL::ComPtr<IShellLinkW> link;
 
-        HRESULT result = CoCreateInstance(CLSID_ShellLink,
-                                          nullptr,
-                                          CLSCTX_INPROC_SERVER,
-                                          IID_IShellLinkW,
-                                          reinterpret_cast<void**>(link.GetAddressOf()));
+        HRESULT result = CoCreateInstance(
+            CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf()));
 
         BYTE modifiers = 0;
 
@@ -705,8 +692,7 @@ std::expected<void, std::wstring> create_launcher_shortcut(const std::filesystem
         }
 
         if (FAILED(result)) {
-            return std::unexpected(L"Windows could not save the launcher shortcut: " +
-                                   windows_error(static_cast<DWORD>(result)));
+            return std::unexpected(L"Windows could not save the launcher shortcut: " + windows_error(static_cast<DWORD>(result)));
         }
 
         return save_shell_link(*persistence.Get(), shortcut_path);
@@ -776,11 +762,8 @@ std::expected<void, std::wstring> disable_launcher_shortcut_at(const std::filesy
         Microsoft::WRL::ComPtr<IShellLinkW> link;
         Microsoft::WRL::ComPtr<IPersistFile> persistence;
 
-        if (FAILED(CoCreateInstance(CLSID_ShellLink,
-                                    nullptr,
-                                    CLSCTX_INPROC_SERVER,
-                                    IID_IShellLinkW,
-                                    reinterpret_cast<void**>(link.GetAddressOf()))) ||
+        if (FAILED(CoCreateInstance(
+                CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf()))) ||
             FAILED(link.As(&persistence)) || FAILED(persistence->Load(shortcut_path.c_str(), STGM_READ))) {
             return std::unexpected(L"Windows could not read the launcher shortcut.");
         }
@@ -812,8 +795,7 @@ std::expected<void, std::wstring> disable_launcher_shortcut_at(const std::filesy
     }
 }
 
-std::expected<void, std::wstring> disable_launcher_shortcut(const std::filesystem::path& executable,
-                                                            bool desktop) noexcept {
+std::expected<void, std::wstring> disable_launcher_shortcut(const std::filesystem::path& executable, bool desktop) noexcept {
     try {
         const auto folder = known_folder(desktop ? FOLDERID_Desktop : FOLDERID_Programs);
 
@@ -855,11 +837,8 @@ std::optional<WORD> read_owned_shortcut_hotkey(const std::filesystem::path& exec
     Microsoft::WRL::ComPtr<IShellLinkW> link;
     Microsoft::WRL::ComPtr<IPersistFile> persistence;
 
-    if (FAILED(CoCreateInstance(CLSID_ShellLink,
-                                nullptr,
-                                CLSCTX_INPROC_SERVER,
-                                IID_IShellLinkW,
-                                reinterpret_cast<void**>(link.GetAddressOf()))) ||
+    if (FAILED(CoCreateInstance(
+            CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf()))) ||
         FAILED(link.As(&persistence)) || FAILED(persistence->Load((folder / L"better-net.lnk").c_str(), STGM_READ))) {
         return std::nullopt;
     }
@@ -867,8 +846,7 @@ std::optional<WORD> read_owned_shortcut_hotkey(const std::filesystem::path& exec
     std::array<wchar_t, 32768> target{};
     WORD hotkey = 0;
 
-    if (link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH) != S_OK ||
-        FAILED(link->GetHotkey(&hotkey)) ||
+    if (link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH) != S_OK || FAILED(link->GetHotkey(&hotkey)) ||
         CompareStringOrdinal(target.data(), -1, executable.c_str(), -1, TRUE) != CSTR_EQUAL) {
         return std::nullopt;
     }
@@ -877,9 +855,7 @@ std::optional<WORD> read_owned_shortcut_hotkey(const std::filesystem::path& exec
 }
 }
 
-bool launcher_shortcut_matches(const std::filesystem::path& executable,
-                               const Settings& settings,
-                               bool desktop) noexcept {
+bool launcher_shortcut_matches(const std::filesystem::path& executable, const Settings& settings, bool desktop) noexcept {
     try {
         const auto hotkey = read_owned_shortcut_hotkey(executable, desktop);
         BYTE modifiers = 0;
@@ -945,30 +921,21 @@ std::expected<void, std::wstring> set_startup_enabled(const std::filesystem::pat
             std::error_code error;
             DWORD binary_type = 0;
 
-            if (!std::filesystem::is_regular_file(executable, error) ||
-                !GetBinaryTypeW(executable.c_str(), &binary_type)) {
+            if (!std::filesystem::is_regular_file(executable, error) || !GetBinaryTypeW(executable.c_str(), &binary_type)) {
                 return std::unexpected(L"The launcher executable could not be found or validated.");
             }
 
             if (command.size() > 260) {
-                return std::unexpected(
-                    L"The launcher path is too long for Windows startup. Move it to a shorter path.");
+                return std::unexpected(L"The launcher path is too long for Windows startup. Move it to a shorter path.");
             }
         }
 
         HKEY raw = nullptr;
 
         const auto opened =
-            enabled ? RegCreateKeyExW(HKEY_CURRENT_USER,
-                                      startup_key,
-                                      0,
-                                      nullptr,
-                                      0,
-                                      KEY_QUERY_VALUE | KEY_SET_VALUE,
-                                      nullptr,
-                                      &raw,
-                                      nullptr)
-                    : RegOpenKeyExW(HKEY_CURRENT_USER, startup_key, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, &raw);
+            enabled
+                ? RegCreateKeyExW(HKEY_CURRENT_USER, startup_key, 0, nullptr, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, nullptr, &raw, nullptr)
+                : RegOpenKeyExW(HKEY_CURRENT_USER, startup_key, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, &raw);
 
         if (!enabled && (opened == ERROR_FILE_NOT_FOUND || opened == ERROR_PATH_NOT_FOUND)) {
             return {};

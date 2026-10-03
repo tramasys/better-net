@@ -119,9 +119,8 @@ bool executable_file(const std::filesystem::path& path) {
         return false;
     }
 
-    const std::uint32_t offset =
-        static_cast<std::uint32_t>(header[60]) | (static_cast<std::uint32_t>(header[61]) << 8) |
-        (static_cast<std::uint32_t>(header[62]) << 16) | (static_cast<std::uint32_t>(header[63]) << 24);
+    const std::uint32_t offset = static_cast<std::uint32_t>(header[60]) | (static_cast<std::uint32_t>(header[61]) << 8) |
+                                 (static_cast<std::uint32_t>(header[62]) << 16) | (static_cast<std::uint32_t>(header[63]) << 24);
 
     if (offset < 64 || offset > max_manifest_bytes) {
         return false;
@@ -131,8 +130,8 @@ bool executable_file(const std::filesystem::path& path) {
     std::array<unsigned char, 24> pe{};
     stream.read(reinterpret_cast<char*>(pe.data()), static_cast<std::streamsize>(pe.size()));
 
-    return stream && pe[0] == 'P' && pe[1] == 'E' && pe[2] == 0 && pe[3] == 0 &&
-           (pe[22] & IMAGE_FILE_EXECUTABLE_IMAGE) != 0 && (pe[23] & 0x20) == 0;
+    return stream && pe[0] == 'P' && pe[1] == 'E' && pe[2] == 0 && pe[3] == 0 && (pe[22] & IMAGE_FILE_EXECUTABLE_IMAGE) != 0 &&
+           (pe[23] & 0x20) == 0;
 }
 
 std::filesystem::path normalized_path(const std::filesystem::path& value) {
@@ -145,8 +144,7 @@ bool same_path(const std::filesystem::path& first, const std::filesystem::path& 
     const auto left = normalized_path(first).wstring();
     const auto right = normalized_path(second).wstring();
 
-    return CompareStringOrdinal(
-               left.c_str(), static_cast<int>(left.size()), right.c_str(), static_cast<int>(right.size()), TRUE) ==
+    return CompareStringOrdinal(left.c_str(), static_cast<int>(left.size()), right.c_str(), static_cast<int>(right.size()), TRUE) ==
            CSTR_EQUAL;
 }
 
@@ -173,8 +171,7 @@ std::filesystem::path game_executable(const Product& product, const std::filesys
     std::uint64_t selected_build = 0;
     std::size_t examined = 0;
 
-    for (auto entry = entries; entry != std::filesystem::directory_iterator{} && examined < 256;
-         entry.increment(error), ++examined) {
+    for (auto entry = entries; entry != std::filesystem::directory_iterator{} && examined < 256; entry.increment(error), ++examined) {
         if (error) {
             break;
         }
@@ -225,8 +222,8 @@ std::wstring executable_version(const std::filesystem::path& path) {
     VS_FIXEDFILEINFO* info = nullptr;
     UINT length = 0;
 
-    if (!VerQueryValueW(data.data(), L"\\", reinterpret_cast<void**>(&info), &length) ||
-        length < sizeof(VS_FIXEDFILEINFO) || info->dwSignature != 0xfeef04bd) {
+    if (!VerQueryValueW(data.data(), L"\\", reinterpret_cast<void**>(&info), &length) || length < sizeof(VS_FIXEDFILEINFO) ||
+        info->dwSignature != 0xfeef04bd) {
         return {};
     }
 
@@ -237,8 +234,8 @@ std::wstring executable_version(const std::filesystem::path& path) {
         return {};
     }
 
-    return std::to_wstring(HIWORD(high)) + L"." + std::to_wstring(LOWORD(high)) + L"." + std::to_wstring(HIWORD(low)) +
-           L"." + std::to_wstring(LOWORD(low));
+    return std::to_wstring(HIWORD(high)) + L"." + std::to_wstring(LOWORD(high)) + L"." + std::to_wstring(HIWORD(low)) + L"." +
+           std::to_wstring(LOWORD(low));
 }
 
 std::vector<std::string_view> split(std::string_view line, char separator, std::size_t maximum = 64) {
@@ -411,8 +408,8 @@ std::wstring registry_string(HKEY key, const wchar_t* name) {
     DWORD size = 0;
     DWORD type = 0;
 
-    if (RegQueryValueExW(key, name, nullptr, &type, nullptr, &size) != ERROR_SUCCESS ||
-        (type != REG_SZ && type != REG_EXPAND_SZ) || size > 65536 || size % sizeof(wchar_t) != 0) {
+    if (RegQueryValueExW(key, name, nullptr, &type, nullptr, &size) != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ) ||
+        size > 65536 || size % sizeof(wchar_t) != 0) {
         return {};
     }
 
@@ -476,8 +473,7 @@ void registry_records(HKEY root,
                       std::stop_token cancellation) {
     HKEY raw = nullptr;
 
-    const auto opened =
-        RegOpenKeyExW(root, L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall", 0, KEY_READ | view, &raw);
+    const auto opened = RegOpenKeyExW(root, L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall", 0, KEY_READ | view, &raw);
 
     if (opened == ERROR_FILE_NOT_FOUND || opened == ERROR_PATH_NOT_FOUND) {
         return;
@@ -680,9 +676,8 @@ bool validate_game(const Game& game) {
     return !executable.empty() && same_path(executable, game.executable);
 }
 
-Catalog catalog_from_records(std::span<const InstallationRecord> records,
-                             const std::filesystem::path& client_path,
-                             std::stop_token cancellation) {
+Catalog
+catalog_from_records(std::span<const InstallationRecord> records, const std::filesystem::path& client_path, std::stop_token cancellation) {
     Catalog result;
     result.client_path = client_path;
 
@@ -762,14 +757,12 @@ Catalog discover(std::stop_token cancellation) {
         const auto program_data = environment_path(L"ProgramData");
         std::error_code program_data_error;
 
-        const bool valid_program_data =
-            program_data.is_absolute() && std::filesystem::is_directory(program_data, program_data_error);
+        const bool valid_program_data = program_data.is_absolute() && std::filesystem::is_directory(program_data, program_data_error);
 
         if (!valid_program_data && !cancellation.stop_requested()) {
             status.scan_failed = true;
 
-            status.warnings.push_back(
-                L"Windows ProgramData is unavailable. Battle.net Agent records could not be scanned.");
+            status.warnings.push_back(L"Windows ProgramData is unavailable. Battle.net Agent records could not be scanned.");
         }
 
         if (valid_program_data && !cancellation.stop_requested()) {
@@ -791,8 +784,7 @@ Catalog discover(std::stop_token cancellation) {
                 } else {
                     status.scan_failed = true;
 
-                    status.warnings.push_back(
-                        L"Battle.net Agent records could not be read. Press F5 to rescan after updates finish.");
+                    status.warnings.push_back(L"Battle.net Agent records could not be read. Press F5 to rescan after updates finish.");
                 }
             } else if (error) {
                 status.scan_failed = true;

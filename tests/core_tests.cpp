@@ -22,8 +22,8 @@ void require(bool condition, const char* message) {
 
 struct Fixture {
     const std::filesystem::path root =
-        std::filesystem::temp_directory_path() / (L"better-net tests \u00fc " + std::to_wstring(GetCurrentProcessId()) +
-                                                  L" " + std::to_wstring(GetTickCount64()));
+        std::filesystem::temp_directory_path() /
+        (L"better-net tests \u00fc " + std::to_wstring(GetCurrentProcessId()) + L" " + std::to_wstring(GetTickCount64()));
 
     Fixture() {
         require(std::filesystem::create_directory(root), "Fixture directory must be new");
@@ -56,8 +56,7 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
     write_file(executable, bytes);
     write_file(client, "Fixture only; never execute");
 
-    write_file(installation / L".build.info",
-               "Active!DEC:1|Version!STRING:0|Product!STRING:0\nmalformed\n1|3.14.2.123|auks\n");
+    write_file(installation / L".build.info", "Active!DEC:1|Version!STRING:0|Product!STRING:0\nmalformed\n1|3.14.2.123|auks\n");
 
     const std::array records = {bnet::InstallationRecord{L"auks", installation, {}},
                                 bnet::InstallationRecord{L"AUKS", installation / L".", {}},
@@ -75,8 +74,7 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
         auto* arguments = CommandLineToArgvW(prepared.command_line.c_str(), &count);
         require(arguments != nullptr, "Launch arguments must parse");
 
-        const bool correct =
-            count == 2 && arguments[0] == client.native() && std::wstring_view(arguments[1]) == L"--exec=launch AUKS";
+        const bool correct = count == 2 && arguments[0] == client.native() && std::wstring_view(arguments[1]) == L"--exec=launch AUKS";
 
         LocalFree(arguments);
         require(correct && prepared.application == client, "Launch must preserve Unicode paths and product route");
@@ -118,8 +116,7 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
         const auto direct_executable = direct_installation / direct.executable;
         write_file(direct_executable, bytes);
 
-        const std::array direct_records = {
-            bnet::InstallationRecord{std::wstring(direct.product), direct_installation, {}}};
+        const std::array direct_records = {bnet::InstallationRecord{std::wstring(direct.product), direct_installation, {}}};
 
         const auto direct_catalog = bnet::catalog_from_records(direct_records);
         require(direct_catalog.games.size() == 1, "Direct games must be discoverable without Battle.net");
@@ -131,26 +128,22 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
             auto* arguments = CommandLineToArgvW(prepared.command_line.c_str(), &count);
             require(arguments != nullptr, "Direct launch arguments must parse");
 
-            const bool correct = count == (direct.argument.empty() ? 1 : 2) &&
-                                 arguments[0] == direct_executable.native() &&
+            const bool correct = count == (direct.argument.empty() ? 1 : 2) && arguments[0] == direct_executable.native() &&
                                  (direct.argument.empty() || std::wstring_view(arguments[1]) == direct.argument);
 
             LocalFree(arguments);
 
-            require(correct && prepared.application == direct_executable &&
-                        prepared.working_directory == direct_executable.parent_path(),
+            require(correct && prepared.application == direct_executable && prepared.working_directory == direct_executable.parent_path(),
                     "Direct launch must preserve Unicode paths, arguments, and working directory");
 
             return bnet::LaunchResult{bnet::LaunchStatus::requested, L"Dry run", 0};
         };
 
-        require(bnet::launch_game(direct_request, {}, direct_adapter).sent(),
-                "Supported games must launch without a Battle.net client");
+        require(bnet::launch_game(direct_request, {}, direct_adapter).sent(), "Supported games must launch without a Battle.net client");
 
         std::filesystem::remove(direct_executable);
 
-        require(bnet::launch_game(direct_request, {}, direct_adapter).status ==
-                    bnet::LaunchStatus::missing_installation,
+        require(bnet::launch_game(direct_request, {}, direct_adapter).status == bnet::LaunchStatus::missing_installation,
                 "Direct executable must be revalidated before dispatch");
     }
 
@@ -244,8 +237,7 @@ void test_running_games(const std::filesystem::path& root) {
     require(bnet::launch_game(request, {}, adapter).status == bnet::LaunchStatus::already_running && dispatches == 0,
             "A running game must block launch before reaching the process adapter");
 
-    require(TerminateProcess(child.process.hProcess, 0) != FALSE &&
-                WaitForSingleObject(child.process.hProcess, 5000) == WAIT_OBJECT_0,
+    require(TerminateProcess(child.process.hProcess, 0) != FALSE && WaitForSingleObject(child.process.hProcess, 5000) == WAIT_OBJECT_0,
             "Owned suspended fixture process must stop within the deadline");
 
     const auto stopped = bnet::running_games(games);
@@ -261,12 +253,11 @@ void test_carousel() {
     require(bnet::visible_game_count(0) == 0 && bnet::visible_game_count(1) == 1 && bnet::visible_game_count(2) == 2 &&
                 bnet::visible_game_count(7) == 3,
             "Only installed games may occupy cards, with at most three visible");
-    require(bnet::launcher_width_dip(0) == 376 && bnet::launcher_width_dip(2) == 712 &&
-                bnet::launcher_width_dip(7) == 1048,
+    require(bnet::launcher_width_dip(0) == 376 && bnet::launcher_width_dip(2) == 712 && bnet::launcher_width_dip(7) == 1048,
             "Window width must follow the visible card count");
     require(bnet::carousel_start(0, 0) == 0 && bnet::carousel_start(4, 2) == 0 && bnet::carousel_start(4, 3) == 1 &&
-                bnet::carousel_start(7, 6) == 4 && bnet::carousel_start(7, 5, 4) == 4 &&
-                bnet::carousel_start(7, 0, 4) == 0 && bnet::carousel_start(1, 6, 4) == 0,
+                bnet::carousel_start(7, 6) == 4 && bnet::carousel_start(7, 5, 4) == 4 && bnet::carousel_start(7, 0, 4) == 0 &&
+                bnet::carousel_start(1, 6, 4) == 0,
             "Carousel must keep selection visible through boundaries, wraparound, and rescans");
 }
 
@@ -303,17 +294,13 @@ void test_shortcut_toggle(const std::filesystem::path& root) {
     Microsoft::WRL::ComPtr<IShellLinkW> link;
     Microsoft::WRL::ComPtr<IPersistFile> persistence;
 
-    require(SUCCEEDED(CoCreateInstance(CLSID_ShellLink,
-                                       nullptr,
-                                       CLSCTX_INPROC_SERVER,
-                                       IID_IShellLinkW,
-                                       reinterpret_cast<void**>(link.GetAddressOf()))) &&
+    require(SUCCEEDED(CoCreateInstance(
+                CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf()))) &&
                 SUCCEEDED(link.As(&persistence)),
             "Shortcut test reader must initialize");
 
     const auto read_hotkey = [&] {
-        require(SUCCEEDED(persistence->Load(shortcut.c_str(), STGM_READ)),
-                "Normal shortcut entry must remain readable");
+        require(SUCCEEDED(persistence->Load(shortcut.c_str(), STGM_READ)), "Normal shortcut entry must remain readable");
         std::array<wchar_t, 32768> target{};
         std::array<wchar_t, 32> arguments{};
         WORD hotkey = 0;
