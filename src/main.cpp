@@ -31,6 +31,8 @@ constexpr UINT launch_ready = WM_APP + 2;
 constexpr UINT tray_message = WM_APP + 3;
 constexpr UINT restore_message = WM_APP + 4;
 constexpr UINT processes_ready = WM_APP + 5;
+constexpr int app_icon_resource = 101;
+constexpr int app_logo_resource = 102;
 constexpr int settings_id = 101;
 constexpr int exit_id = 104;
 constexpr int minimize_id = 106;
@@ -148,6 +150,7 @@ struct Graphics
     ComPtr<ID2D1DCRenderTarget> control_target;
     ComPtr<ID2D1SolidColorBrush> window_brush;
     ComPtr<ID2D1SolidColorBrush> control_brush;
+    ComPtr<ID2D1Bitmap> logo;
     std::array<ComPtr<IDWriteTextFormat>, 6> fonts;
     std::vector<ComPtr<ID2D1Bitmap>> images;
     UINT dpi = 96;
@@ -203,6 +206,39 @@ struct Graphics
 
         window_target->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
         require(window_target->CreateSolidColorBrush(color(0xFFFFFF), &window_brush));
+        const auto instance = GetModuleHandleW(nullptr);
+        const auto resource = FindResourceW(instance, MAKEINTRESOURCEW(app_logo_resource), RT_RCDATA);
+        require(resource ? S_OK : E_FAIL);
+        const auto loaded = LoadResource(instance, resource);
+        const auto bytes = static_cast<BYTE*>(LockResource(loaded));
+        const auto size = SizeofResource(instance, resource);
+        require(bytes && size ? S_OK : E_FAIL);
+        ComPtr<IWICImagingFactory> image_factory;
+        ComPtr<IWICStream> stream;
+        ComPtr<IWICBitmapDecoder> decoder;
+        ComPtr<IWICBitmapFrameDecode> frame;
+        ComPtr<IWICFormatConverter> converter;
+
+        require(CoCreateInstance(CLSID_WICImagingFactory,
+                                 nullptr,
+                                 CLSCTX_INPROC_SERVER,
+                                 IID_IWICImagingFactory,
+                                 reinterpret_cast<void**>(image_factory.GetAddressOf())));
+
+        require(image_factory->CreateStream(&stream));
+        require(stream->InitializeFromMemory(bytes, size));
+        require(image_factory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, &decoder));
+        require(decoder->GetFrame(0, &frame));
+        require(image_factory->CreateFormatConverter(&converter));
+
+        require(converter->Initialize(frame.Get(),
+                                      GUID_WICPixelFormat32bppPBGRA,
+                                      WICBitmapDitherTypeNone,
+                                      nullptr,
+                                      0,
+                                      WICBitmapPaletteTypeCustom));
+
+        require(window_target->CreateBitmapFromWicBitmap(converter.Get(), nullptr, &logo));
     }
 
     void text(ID2D1RenderTarget* target,
@@ -272,6 +308,8 @@ struct App
     std::array<HWND, 3> caption_buttons{};
     std::array<HWND, 4> setting_buttons{};
     HFONT control_font = nullptr;
+    HICON window_icon = nullptr;
+    HICON small_icon = nullptr;
     HBRUSH background = CreateSolidBrush(RGB(17, 17, 19));
     Graphics graphics;
     bnet::Settings settings;
@@ -339,6 +377,17 @@ struct App
         }
 
         remove_tray();
+
+        if (window_icon)
+        {
+            DestroyIcon(window_icon);
+        }
+
+        if (small_icon)
+        {
+            DestroyIcon(small_icon);
+        }
+
         if (control_font)
         {
             DeleteObject(control_font);
@@ -422,6 +471,65 @@ struct App
             DeleteObject(control_font);
         }
         control_font = replacement;
+    }
+
+    void update_icons()
+    {
+        const auto instance = GetModuleHandleW(nullptr);
+        const auto load = [&](int width_metric, int height_metric)
+        {
+            return static_cast<HICON>(LoadImageW(instance,
+                                                 MAKEINTRESOURCEW(app_icon_resource),
+                                                 IMAGE_ICON,
+                                                 GetSystemMetricsForDpi(width_metric, graphics.dpi),
+                                                 GetSystemMetricsForDpi(height_metric, graphics.dpi),
+                                                 0));
+        };
+
+        const auto loaded_large = load(SM_CXICON, SM_CYICON);
+        const auto loaded_small = load(SM_CXSMICON, SM_CYSMICON);
+
+        if (!loaded_large || !loaded_small)
+        {
+            if (loaded_large)
+            {
+                DestroyIcon(loaded_large);
+            }
+
+            if (loaded_small)
+            {
+                DestroyIcon(loaded_small);
+            }
+
+            return;
+        }
+
+        SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(loaded_large));
+        SendMessageW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(loaded_small));
+
+        if (tray_added)
+        {
+            NOTIFYICONDATAW data{};
+            data.cbSize = sizeof(data);
+            data.hWnd = window;
+            data.uID = 1;
+            data.uFlags = NIF_ICON;
+            data.hIcon = loaded_small;
+            Shell_NotifyIconW(NIM_MODIFY, &data);
+        }
+
+        if (window_icon)
+        {
+            DestroyIcon(window_icon);
+        }
+
+        if (small_icon)
+        {
+            DestroyIcon(small_icon);
+        }
+
+        window_icon = loaded_large;
+        small_icon = loaded_small;
     }
 
     void create_controls()
@@ -771,13 +879,11 @@ struct App
             const auto [width, height] = client_size();
             target->BeginDraw();
             target->Clear(color(background_color));
-            brush->SetColor(color(accent_color));
-            target->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(28, 25, 42, 39), 4, 4), brush, 1.5F);
-            target->DrawLine(D2D1::Point2F(32, 35), D2D1::Point2F(38, 29), brush, 1.5F);
+            target->DrawBitmap(graphics.logo.Get(), D2D1::RectF(26, 20, 50, 44));
             graphics.text(target,
                           brush,
                           L"better-net",
-                          D2D1::RectF(52, 16, width - 142, 48),
+                          D2D1::RectF(58, 16, width - 142, 48),
                           1,
                           text_color,
                           DWRITE_TEXT_ALIGNMENT_LEADING,
@@ -850,6 +956,7 @@ struct App
             }
             if (target->EndDraw() == D2DERR_RECREATE_TARGET)
             {
+                graphics.logo.Reset();
                 graphics.window_brush.Reset();
                 graphics.window_target.Reset();
                 InvalidateRect(window, nullptr, FALSE);
@@ -857,6 +964,9 @@ struct App
         }
         catch (...)
         {
+            graphics.logo.Reset();
+            graphics.window_brush.Reset();
+            graphics.window_target.Reset();
             FillRect(dc, &state.rcPaint, background);
             SetTextColor(dc, RGB(242, 240, 245));
             SetBkMode(dc, TRANSPARENT);
@@ -1266,7 +1376,8 @@ struct App
         data.uID = 1;
         data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
         data.uCallbackMessage = tray_message;
-        data.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+        data.hIcon =
+            small_icon ? small_icon : LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(app_icon_resource));
         wcscpy_s(data.szTip, L"better-net");
         tray_added = Shell_NotifyIconW(NIM_ADD, &data) != FALSE;
     }
@@ -1954,6 +2065,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             return 0;
         case WM_DPICHANGED:
             app->graphics.dpi = HIWORD(wparam);
+            app->update_icons();
             if (app->graphics.window_target)
             {
                 app->graphics.window_target->SetDpi(static_cast<float>(app->graphics.dpi),
@@ -2123,7 +2235,8 @@ int run(HINSTANCE instance)
     definition.lpfnWndProc = window_proc;
     definition.hInstance = instance;
     definition.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    definition.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    definition.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(app_icon_resource));
+    definition.hIconSm = definition.hIcon;
     definition.lpszClassName = window_class;
     require(RegisterClassExW(&definition) ? S_OK : E_FAIL);
     app.graphics.dpi = GetDpiForSystem();
@@ -2144,6 +2257,7 @@ int run(HINSTANCE instance)
         throw std::runtime_error("The launcher window could not be created.");
     }
     app.graphics.dpi = GetDpiForWindow(app.window);
+    app.update_icons();
     const BOOL dark = TRUE;
     DwmSetWindowAttribute(app.window, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
     const BOOL disable_transitions = TRUE;

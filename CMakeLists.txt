@@ -33,7 +33,10 @@ add_library(bnet_core STATIC src/catalog.cpp src/platform.cpp)
 target_link_libraries(bnet_core PUBLIC bnet_options shell32 ole32 advapi32 version uuid)
 
 add_executable(better-net WIN32 src/main.cpp src/app.rc)
-set_source_files_properties(src/app.rc PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/app.manifest")
+set_property(SOURCE src/app.rc PROPERTY OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/app.manifest"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/assets/better-net.ico"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/assets/better-net.png")
 target_link_libraries(better-net PRIVATE bnet_core d2d1 dwrite windowscodecs dwmapi comctl32)
 target_link_options(better-net PRIVATE /MANIFEST:NO)
 
