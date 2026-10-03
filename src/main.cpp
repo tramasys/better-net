@@ -1320,7 +1320,7 @@ struct App
         first = bnet::carousel_start(catalog.games.size(), selected, first);
         bnet::LaunchRequest request{catalog.games[index], catalog.client_path};
         launch_running = true;
-        set_status(L"Opening " + catalog.games[index].title + L"...");
+        set_status(L"");
         update_cards();
         SetTimer(window, 1, 5200, nullptr);
         try
@@ -1381,7 +1381,16 @@ struct App
 
         if (result)
         {
-            set_status(result->message.empty() ? L"Launch failed. Press F5 to rescan and try again." : result->message);
+            if (result->sent())
+            {
+                set_status(L"");
+            }
+            else
+            {
+                set_status(result->message.empty() ? L"Launch failed. Press F5 to rescan and try again."
+                                                   : result->message);
+            }
+
             update_cards();
         }
     }
