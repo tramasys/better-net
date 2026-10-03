@@ -668,16 +668,6 @@ struct App
                                    accent_color);
                 }
             }
-            graphics.text(target,
-                          brush,
-                          settings_open              ? L"Esc returns to your library"
-                          : catalog.games.size() > 3 ? L"\u2190 \u2192 or scroll to browse     Enter to play"
-                          : catalog.games.empty()    ? L"Esc to hide"
-                                                     : L"Enter to play     Esc to hide",
-                          D2D1::RectF(28, height - 27, width - 28, height - 8),
-                          0,
-                          muted_color,
-                          DWRITE_TEXT_ALIGNMENT_CENTER);
             if (target->EndDraw() == D2DERR_RECREATE_TARGET)
             {
                 graphics.window_brush.Reset();
@@ -732,15 +722,19 @@ struct App
                 {
                     const auto size = graphics.images[index]->GetSize();
                     const float factor =
-                        std::min((art.right - art.left) / size.width, (art.bottom - art.top) / size.height);
+                        std::max((art.right - art.left) / size.width, (art.bottom - art.top) / size.height);
                     const float art_width = size.width * factor;
                     const float art_height = size.height * factor;
                     const float left = (art.left + art.right - art_width) / 2.0F;
                     const float top = (art.top + art.bottom - art_height) / 2.0F;
-                    target->DrawBitmap(graphics.images[index].Get(),
-                                       D2D1::RectF(left, top, left + art_width, top + art_height),
-                                       1.0F,
-                                       D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                    const auto properties = D2D1::BitmapBrushProperties(
+                        D2D1_EXTEND_MODE_CLAMP, D2D1_EXTEND_MODE_CLAMP, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                    ComPtr<ID2D1BitmapBrush> artwork_brush;
+                    require(target->CreateBitmapBrush(
+                        graphics.images[index].Get(), &properties, nullptr, artwork_brush.GetAddressOf()));
+                    artwork_brush->SetTransform(D2D1::Matrix3x2F::Scale(factor, factor) *
+                                                D2D1::Matrix3x2F::Translation(left, top));
+                    target->FillRoundedRectangle(D2D1::RoundedRect(art, 7, 7), artwork_brush.Get());
                 }
                 else
                 {
@@ -1093,7 +1087,7 @@ struct App
         }
         else
         {
-            set_status(L"Choose a game to play.");
+            set_status(L"");
         }
 
         if (initial_scan || previous_count != catalog.games.size())
@@ -1650,9 +1644,12 @@ int run(HINSTANCE instance)
                 app.record_key(key);
                 continue;
             }
-            if (!app.settings_open && (key == VK_LEFT || key == VK_RIGHT))
+            const bool plain_key = message.message == WM_KEYDOWN && GetKeyState(VK_SHIFT) >= 0 &&
+                                   GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_MENU) >= 0 &&
+                                   GetKeyState(VK_LWIN) >= 0 && GetKeyState(VK_RWIN) >= 0;
+            if (!app.settings_open && plain_key && (key == VK_LEFT || key == VK_RIGHT || key == 'A' || key == 'D'))
             {
-                app.select(key == VK_LEFT ? -1 : 1);
+                app.select(key == VK_LEFT || key == 'A' ? -1 : 1);
                 continue;
             }
             if (key == VK_RETURN)
