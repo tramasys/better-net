@@ -7,9 +7,11 @@
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace bnet
 {
@@ -37,6 +39,7 @@ std::expected<void, std::wstring> save_settings(const Settings& settings,
 enum class LaunchStatus
 {
     requested,
+    already_running,
     missing_client,
     missing_installation,
     invalid_descriptor,
@@ -71,6 +74,8 @@ std::expected<PreparedLaunch, LaunchResult> prepare_launch(const LaunchRequest& 
 
 LaunchResult
 launch_game(const LaunchRequest& request, std::stop_token stop = {}, const ProcessAdapter& adapter = {}) noexcept;
+
+std::optional<std::vector<bool>> running_games(std::span<const Game> games, std::stop_token stop = {}) noexcept;
 
 class LaunchGuard
 {

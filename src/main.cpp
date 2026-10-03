@@ -30,6 +30,7 @@ constexpr UINT catalog_ready = WM_APP + 1;
 constexpr UINT launch_ready = WM_APP + 2;
 constexpr UINT tray_message = WM_APP + 3;
 constexpr UINT restore_message = WM_APP + 4;
+constexpr UINT processes_ready = WM_APP + 5;
 constexpr int settings_id = 101;
 constexpr int exit_id = 104;
 constexpr int minimize_id = 106;
@@ -131,6 +132,12 @@ struct ScanResult
 {
     bnet::Catalog catalog;
     std::vector<Pixels> images;
+};
+
+struct ProcessResult
+{
+    std::uint64_t generation = 0;
+    std::optional<std::vector<bool>> running;
 };
 
 struct Graphics
@@ -269,16 +276,23 @@ struct App
     Graphics graphics;
     bnet::Settings settings;
     bnet::Catalog catalog;
-    bnet::LaunchGuard launch_guard;
+    bnet::LaunchGuard launch_guard{std::chrono::seconds(30)};
     std::jthread scan_worker;
     std::jthread launch_worker;
+    std::jthread process_worker;
     std::mutex results_mutex;
     std::optional<ScanResult> scan_result;
     std::optional<bnet::LaunchResult> launch_result;
+    std::optional<ProcessResult> process_result;
+    std::vector<bool> game_running;
+    std::uint64_t process_generation = 0;
+    std::uint64_t launch_ticket = 0;
     std::size_t selected = 0;
     std::size_t first = 0;
     std::size_t launching_index = 0;
     bool scanning = false;
+    bool checking_processes = false;
+    bool fresh_processes_required = true;
     bool closing = false;
     bool tray_added = false;
     bool hotkey_registered = false;
@@ -309,6 +323,7 @@ struct App
     {
         scan_worker.request_stop();
         launch_worker.request_stop();
+        process_worker.request_stop();
         if (scan_worker.joinable())
         {
             scan_worker.join();
@@ -317,6 +332,12 @@ struct App
         {
             launch_worker.join();
         }
+
+        if (process_worker.joinable())
+        {
+            process_worker.join();
+        }
+
         remove_tray();
         if (control_font)
         {
@@ -523,6 +544,109 @@ struct App
         InvalidateRect(window, nullptr, TRUE);
     }
 
+    bool is_running(std::size_t index) const
+    {
+        return index < game_running.size() && game_running[index];
+    }
+
+    const wchar_t* play_label(std::size_t index) const
+    {
+        if (is_running(index))
+        {
+            return L"Running";
+        }
+
+        return index == launching_index && (launch_running || launch_guard.busy()) ? L"Opening..." : L"Play";
+    }
+
+    void focus_selection()
+    {
+        const auto card = selected >= first && selected - first < cards.size() ? cards[selected - first] : nullptr;
+        SetFocus(card && IsWindowEnabled(card) ? card : window);
+    }
+
+    void refresh_running_games(bool fresh = false)
+    {
+        if (fresh)
+        {
+            ++process_generation;
+            fresh_processes_required = true;
+            update_cards(false);
+        }
+
+        if (closing || settings_open || !IsWindowVisible(window) || IsIconic(window) || catalog.games.empty())
+        {
+            KillTimer(window, 3);
+            return;
+        }
+
+        SetTimer(window, 3, 1000, nullptr);
+
+        if (checking_processes)
+        {
+            return;
+        }
+
+        checking_processes = true;
+
+        try
+        {
+            process_worker = std::jthread(
+                [this, games = catalog.games, generation = process_generation](std::stop_token stop)
+                {
+                    ProcessResult result{generation, bnet::running_games(games, stop)};
+                    std::lock_guard lock(results_mutex);
+                    process_result = std::move(result);
+                    PostMessageW(window, processes_ready, 0, 0);
+                });
+        }
+        catch (...)
+        {
+            checking_processes = false;
+            fresh_processes_required = false;
+            update_cards(false);
+        }
+    }
+
+    void receive_running_games()
+    {
+        std::optional<ProcessResult> result;
+
+        {
+            std::lock_guard lock(results_mutex);
+            result.swap(process_result);
+        }
+
+        checking_processes = false;
+
+        if (!result || result->generation != process_generation)
+        {
+            refresh_running_games();
+            return;
+        }
+
+        bool changed = fresh_processes_required;
+        fresh_processes_required = false;
+
+        if (result->running && result->running->size() == catalog.games.size())
+        {
+            changed = changed || game_running != *result->running;
+            game_running = std::move(*result->running);
+        }
+
+        if (is_running(launching_index) && launch_guard.busy())
+        {
+            launch_guard.cancel();
+            KillTimer(window, 1);
+            changed = true;
+        }
+
+        if (changed)
+        {
+            update_cards(false);
+        }
+    }
+
     void update_cards(bool relayout = true)
     {
         first = bnet::carousel_start(catalog.games.size(), selected, first);
@@ -530,11 +654,19 @@ struct App
         {
             const auto game_index = first + index;
             const bool exists = game_index < catalog.games.size();
-            EnableWindow(cards[index], exists && !scanning && !launch_running && !launch_guard.busy());
+            EnableWindow(cards[index],
+                         exists && !scanning && !launch_running && !launch_guard.busy() && !fresh_processes_required &&
+                             !is_running(game_index));
+
+            if (!IsWindowEnabled(cards[index]) && GetFocus() == cards[index])
+            {
+                SetFocus(window);
+            }
+
             if (exists)
             {
                 const auto& game = catalog.games[game_index];
-                const auto label = L"Play " + game.title + L". " + game.version;
+                const auto label = std::wstring(play_label(game_index)) + L" " + game.title + L". " + game.version;
                 SetWindowTextW(cards[index], label.c_str());
             }
             InvalidateRect(cards[index], nullptr, TRUE);
@@ -562,7 +694,16 @@ struct App
                        true);
         }
         layout();
-        SetFocus(open ? setting_buttons[1] : catalog.games.empty() ? caption_buttons[0] : cards[selected - first]);
+        refresh_running_games(true);
+
+        if (open || catalog.games.empty())
+        {
+            SetFocus(open ? setting_buttons[1] : caption_buttons[0]);
+        }
+        else
+        {
+            focus_selection();
+        }
     }
 
     void record_key(WPARAM key)
@@ -600,7 +741,7 @@ struct App
         update_cards();
         if (focus)
         {
-            SetFocus(cards[selected - first]);
+            focus_selection();
         }
     }
 
@@ -804,7 +945,8 @@ struct App
                                brush,
                                play_bounds(width, height),
                                7,
-                               down                                                              ? 0x453958
+                               !IsWindowEnabled(item.hwndItem)                                   ? 0x242227
+                               : down                                                            ? 0x453958
                                : hovered_play == item.hwndItem && IsWindowEnabled(item.hwndItem) ? accent_hover_color
                                : (hover || focused || index == selected)                         ? accent_surface
                                                                                                  : 0x27252E);
@@ -823,10 +965,12 @@ struct App
                 }
                 graphics.text(target,
                               brush,
-                              launch_running && index == launching_index ? L"Opening..." : L"Play",
+                              play_label(index),
                               D2D1::RectF(36, height - 54, width - 36, height - 14),
                               1,
-                              play_hover ? text_color : 0xD5CBF4,
+                              !IsWindowEnabled(item.hwndItem) ? muted_color
+                              : play_hover                    ? text_color
+                                                              : 0xD5CBF4,
                               DWRITE_TEXT_ALIGNMENT_CENTER,
                               true);
             }
@@ -1161,6 +1305,7 @@ struct App
         update_cards(false);
         ShowWindow(window, SW_SHOW);
         ShowWindow(window, SW_SHOW);
+        refresh_running_games(true);
         SetForegroundWindow(window);
 
         if (settings_open)
@@ -1173,7 +1318,7 @@ struct App
         }
         else
         {
-            SetFocus(cards[selected - first]);
+            focus_selection();
         }
         RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
     }
@@ -1183,6 +1328,7 @@ struct App
         recording = false;
         SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
         ShowWindow(window, tray_added ? SW_HIDE : SW_MINIMIZE);
+        refresh_running_games(true);
     }
 
     void scan()
@@ -1267,6 +1413,7 @@ struct App
 
         const auto previous_count = catalog.games.size();
         catalog = std::move(result->catalog);
+        game_running.assign(catalog.games.size(), false);
         graphics.upload(result->images);
         scanning = false;
         selected = std::min(selected, catalog.games.empty() ? 0 : catalog.games.size() - 1);
@@ -1294,16 +1441,18 @@ struct App
         const bool focus_first = (initial_scan || previous_count == 0) && !settings_open && IsWindowVisible(window) &&
                                  !IsIconic(window) && GetForegroundWindow() == window;
         initial_scan = false;
+        refresh_running_games(true);
         update_cards();
         if (focus_first && !catalog.games.empty())
         {
-            SetFocus(cards.front());
+            focus_selection();
         }
     }
 
     void launch(std::size_t index)
     {
-        if (index >= catalog.games.size() || scanning || closing || launch_running)
+        if (index >= catalog.games.size() || scanning || closing || launch_running || fresh_processes_required ||
+            is_running(index))
         {
             return;
         }
@@ -1316,17 +1465,18 @@ struct App
         }
 
         selected = index;
+        launch_ticket = *ticket;
         launching_index = index;
         first = bnet::carousel_start(catalog.games.size(), selected, first);
         bnet::LaunchRequest request{catalog.games[index], catalog.client_path};
         launch_running = true;
         set_status(L"");
         update_cards();
-        SetTimer(window, 1, 5200, nullptr);
+        SetTimer(window, 1, 30200, nullptr);
         try
         {
             launch_worker = std::jthread(
-                [this, request = std::move(request), ticket = *ticket](std::stop_token stop)
+                [this, request = std::move(request)](std::stop_token stop)
                 {
                     bnet::LaunchResult result;
 
@@ -1349,9 +1499,6 @@ struct App
                     {
                         result.status = bnet::LaunchStatus::process_error;
                     }
-
-                    launch_guard.finish(ticket, result.sent());
-                    launch_running = false;
 
                     if (!stop.stop_requested())
                     {
@@ -1381,7 +1528,21 @@ struct App
 
         if (result)
         {
-            if (result->sent())
+            launch_running = false;
+            launch_guard.finish(launch_ticket, result->sent() && !dry_run);
+
+            if (result->status == bnet::LaunchStatus::already_running && launching_index < game_running.size())
+            {
+                game_running[launching_index] = true;
+            }
+
+            if (is_running(launching_index))
+            {
+                launch_guard.cancel();
+                KillTimer(window, 1);
+            }
+
+            if (result->sent() || result->status == bnet::LaunchStatus::already_running)
             {
                 set_status(L"");
             }
@@ -1392,6 +1553,7 @@ struct App
             }
 
             update_cards();
+            refresh_running_games(true);
         }
     }
 
@@ -1403,6 +1565,7 @@ struct App
         }
         closing = true;
         KillTimer(window, 2);
+        KillTimer(window, 3);
         hotkey_retry_until = 0;
         refresh_shortcut_state();
         const auto executable = launcher_path();
@@ -1421,6 +1584,7 @@ struct App
         }
         scan_worker.request_stop();
         launch_worker.request_stop();
+        process_worker.request_stop();
         launch_guard.cancel();
         KillTimer(window, 1);
         remove_tray();
@@ -1433,6 +1597,11 @@ struct App
         if (launch_worker.joinable())
         {
             launch_worker.join();
+        }
+
+        if (process_worker.joinable())
+        {
+            process_worker.join();
         }
 
         DestroyWindow(window);
@@ -1706,7 +1875,7 @@ LRESULT CALLBACK button_proc(HWND control, UINT message, WPARAM wparam, LPARAM l
             {
                 ReleaseCapture();
                 SendMessageW(control, BM_SETSTATE, FALSE, 0);
-                SetFocus(app.cards[app.selected - app.first]);
+                app.focus_selection();
                 return 0;
             }
         }
@@ -1770,6 +1939,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         case WM_SIZE:
             if (wparam == SIZE_MINIMIZED)
             {
+                app->refresh_running_games(true);
                 return 0;
             }
             if (app->graphics.window_target)
@@ -1779,6 +1949,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             if (app->status_control)
             {
                 app->layout();
+                app->refresh_running_games(true);
             }
             return 0;
         case WM_DPICHANGED:
@@ -1828,7 +1999,11 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             else if (wparam == 1)
             {
                 KillTimer(window, 1);
-                app->update_cards();
+                app->update_cards(false);
+            }
+            else if (wparam == 3)
+            {
+                app->refresh_running_games();
             }
             return 0;
         case catalog_ready:
@@ -1836,6 +2011,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             return 0;
         case launch_ready:
             app->receive_launch();
+            return 0;
+        case processes_ready:
+            app->receive_running_games();
             return 0;
         case restore_message:
         case WM_HOTKEY:

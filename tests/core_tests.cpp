@@ -187,6 +187,96 @@ void test_launch_guard()
     require(!guard.busy(start + 5004ms), "Failed launch must allow retry");
 }
 
+void test_running_games(const std::filesystem::path& root)
+{
+    std::array<wchar_t, 32768> current{};
+    const auto length = GetModuleFileNameW(nullptr, current.data(), static_cast<DWORD>(current.size()));
+    require(length > 0 && length < current.size(), "Test executable path must be available");
+    const auto installation = root / L"Running Diablo III";
+    const auto executable = installation / L"x64" / L"Diablo III64.exe";
+    const auto other = root / L"Another directory" / executable.filename();
+    std::filesystem::create_directories(executable.parent_path());
+    std::filesystem::create_directory(other.parent_path());
+
+    require(std::filesystem::copy_file(current.data(), executable) && std::filesystem::copy_file(current.data(), other),
+            "Suspended process fixtures must copy");
+
+    struct Child
+    {
+        PROCESS_INFORMATION process{};
+
+        ~Child()
+        {
+            if (process.hProcess)
+            {
+                if (WaitForSingleObject(process.hProcess, 0) == WAIT_TIMEOUT)
+                {
+                    TerminateProcess(process.hProcess, 1);
+                    WaitForSingleObject(process.hProcess, 5000);
+                }
+
+                CloseHandle(process.hProcess);
+            }
+
+            if (process.hThread)
+            {
+                CloseHandle(process.hThread);
+            }
+        }
+    };
+
+    Child child;
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    auto command = bnet::quote_windows_argument(executable.native());
+
+    require(CreateProcessW(executable.c_str(),
+                           command.data(),
+                           nullptr,
+                           nullptr,
+                           FALSE,
+                           CREATE_SUSPENDED | CREATE_NO_WINDOW,
+                           nullptr,
+                           root.c_str(),
+                           &startup,
+                           &child.process) != FALSE,
+            "Fixture process must be created suspended");
+
+    const std::array records = {bnet::InstallationRecord{L"diablo3", installation, {}}};
+    const auto catalog = bnet::catalog_from_records(records);
+    require(catalog.games.size() == 1, "Suspended fixture must have a valid direct launch descriptor");
+    std::array games = {catalog.games.front(), catalog.games.front()};
+    games[1].executable = other;
+    const auto running = bnet::running_games(games);
+
+    require(running && running->size() == games.size() && (*running)[0] && !(*running)[1],
+            "Running games must match the exact executable path, not just its filename");
+
+    int dispatches = 0;
+    const bnet::LaunchRequest request{games[0], {}};
+
+    const bnet::ProcessAdapter adapter = [&](const bnet::PreparedLaunch&)
+    {
+        ++dispatches;
+        return bnet::LaunchResult{bnet::LaunchStatus::requested, L"Dry run", 0};
+    };
+
+    require(bnet::launch_game(request, {}, adapter).status == bnet::LaunchStatus::already_running && dispatches == 0,
+            "A running game must block launch before reaching the process adapter");
+
+    require(TerminateProcess(child.process.hProcess, 0) != FALSE &&
+                WaitForSingleObject(child.process.hProcess, 5000) == WAIT_OBJECT_0,
+            "Owned suspended fixture process must stop within the deadline");
+
+    const auto stopped = bnet::running_games(games);
+
+    require(stopped && stopped->size() == games.size() && !(*stopped)[0] && !(*stopped)[1],
+            "Exited fixture process must no longer mark a game as running");
+
+    require(bnet::launch_game(request, {}, adapter).sent() && dispatches == 1,
+            "An exited game must allow one launch through the dry-run adapter");
+}
+
 void test_carousel()
 {
     require(bnet::visible_game_count(0) == 0 && bnet::visible_game_count(1) == 1 && bnet::visible_game_count(2) == 2 &&
@@ -285,6 +375,7 @@ int main()
         const Fixture fixture;
         test_discovery_and_launch(fixture.root);
         test_launch_guard();
+        test_running_games(fixture.root);
         test_carousel();
         test_hotkey_settings(fixture.root);
         test_shortcut_toggle(fixture.root);

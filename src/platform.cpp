@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <ShlObj.h>
 #include <ShObjIdl.h>
+#include <TlHelp32.h>
 #include <wrl/client.h>
 #include <algorithm>
 #include <array>
@@ -575,11 +576,123 @@ LaunchResult launch_game(const LaunchRequest& request, std::stop_token stop, con
             return {LaunchStatus::cancelled, L"Launch request cancelled.", 0};
         }
 
+        const auto running = running_games(std::span(&request.game, 1), stop);
+
+        if (stop.stop_requested())
+        {
+            return {LaunchStatus::cancelled, L"Launch request cancelled.", 0};
+        }
+
+        if (running && running->front())
+        {
+            return {LaunchStatus::already_running, L"Game is already running.", 0};
+        }
+
         return adapter ? adapter(*prepared) : create_process(*prepared);
     }
     catch (...)
     {
         return {LaunchStatus::process_error, L"The launch request failed. Press F5 to rescan and try again.", 0};
+    }
+}
+
+std::optional<std::vector<bool>> running_games(std::span<const Game> games, std::stop_token stop) noexcept
+{
+    try
+    {
+        if (stop.stop_requested())
+        {
+            return std::nullopt;
+        }
+
+        std::vector<bool> running(games.size(), false);
+
+        if (games.empty())
+        {
+            return running;
+        }
+
+        const auto normalize = [](const std::filesystem::path& path)
+        {
+            std::error_code error;
+            auto normalized = std::filesystem::weakly_canonical(path, error);
+            return error ? path.lexically_normal() : normalized;
+        };
+
+        std::vector<std::filesystem::path> executables;
+        std::vector<std::wstring> filenames;
+        executables.reserve(games.size());
+        filenames.reserve(games.size());
+
+        for (const auto& game : games)
+        {
+            executables.push_back(normalize(game.executable));
+            filenames.push_back(game.executable.filename().native());
+        }
+
+        const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+        if (snapshot == INVALID_HANDLE_VALUE)
+        {
+            return std::nullopt;
+        }
+
+        const Handle snapshot_owner(snapshot);
+        PROCESSENTRY32W entry{};
+        entry.dwSize = sizeof(entry);
+        BOOL available = Process32FirstW(snapshot, &entry);
+        std::size_t visited = 0;
+        std::array<wchar_t, 32768> image_path{};
+
+        while (available)
+        {
+            if (stop.stop_requested() || ++visited > 65536)
+            {
+                return std::nullopt;
+            }
+
+            const bool candidate = std::ranges::any_of(
+                filenames,
+                [&](const std::wstring& filename)
+                {
+                    return CompareStringOrdinal(filename.c_str(), -1, entry.szExeFile, -1, TRUE) == CSTR_EQUAL;
+                });
+
+            if (candidate)
+            {
+                const HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
+                const Handle process_owner(process);
+                DWORD length = static_cast<DWORD>(image_path.size());
+
+                if (process != nullptr && QueryFullProcessImageNameW(process, 0, image_path.data(), &length))
+                {
+                    const auto executable =
+                        normalize(std::filesystem::path(std::wstring_view(image_path.data(), length)));
+
+                    for (std::size_t index = 0; index < executables.size(); ++index)
+                    {
+                        if (CompareStringOrdinal(executables[index].c_str(), -1, executable.c_str(), -1, TRUE) ==
+                            CSTR_EQUAL)
+                        {
+                            running[index] = true;
+                        }
+                    }
+                }
+            }
+
+            available = Process32NextW(snapshot, &entry);
+        }
+
+        if (GetLastError() != ERROR_NO_MORE_FILES || stop.stop_requested())
+        {
+            return std::nullopt;
+        }
+
+        return running;
+    }
+    catch (...)
+    {
+        return std::nullopt;
     }
 }
 
