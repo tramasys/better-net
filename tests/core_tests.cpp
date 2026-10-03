@@ -1,4 +1,5 @@
 #include "platform.hpp"
+#include "presentation.hpp"
 #include <Windows.h>
 #include <shellapi.h>
 #include <array>
@@ -121,6 +122,20 @@ void test_launch_guard()
     require(!guard.busy(start + 5004ms), "Failed launch must allow retry");
 }
 
+void test_carousel()
+{
+    require(bnet::visible_game_count(0) == 0 && bnet::visible_game_count(1) == 1 && bnet::visible_game_count(2) == 2 &&
+                bnet::visible_game_count(7) == 3,
+            "Only installed games may occupy cards, with at most three visible");
+    require(bnet::launcher_width_dip(0) == 376 && bnet::launcher_width_dip(2) == 712 &&
+                bnet::launcher_width_dip(7) == 1048,
+            "Window width must follow the visible card count");
+    require(bnet::carousel_start(0, 0) == 0 && bnet::carousel_start(4, 2) == 0 && bnet::carousel_start(4, 3) == 1 &&
+                bnet::carousel_start(7, 6) == 4 && bnet::carousel_start(7, 5, 4) == 4 &&
+                bnet::carousel_start(7, 0, 4) == 0 && bnet::carousel_start(1, 6, 4) == 0,
+            "Carousel must keep selection visible through boundaries, wraparound, and rescans");
+}
+
 void test_hotkey_settings(const std::filesystem::path& root)
 {
     const auto path = root / L"settings.ini";
@@ -145,6 +160,7 @@ int main()
         const Fixture fixture;
         test_discovery_and_launch(fixture.root);
         test_launch_guard();
+        test_carousel();
         test_hotkey_settings(fixture.root);
         std::cout << "Core checks passed without launching games.\n";
         return 0;

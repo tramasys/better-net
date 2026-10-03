@@ -356,7 +356,7 @@ SettingsLoad load_settings(const std::filesystem::path& path) noexcept
                 return {};
             }
 
-            return {{}, L"Settings could not be read; the default shortcut is active."};
+            return {{}, L"Settings could not be read. The default shortcut is active."};
         }
 
         const Handle handle(file);
@@ -364,7 +364,7 @@ SettingsLoad load_settings(const std::filesystem::path& path) noexcept
 
         if (!GetFileSizeEx(file, &size) || size.QuadPart <= 0 || size.QuadPart > 4096)
         {
-            return {{}, L"Settings were invalid; the default shortcut is active."};
+            return {{}, L"Settings were invalid. The default shortcut is active."};
         }
 
         std::string bytes(static_cast<std::size_t>(size.QuadPart), '\0');
@@ -372,21 +372,21 @@ SettingsLoad load_settings(const std::filesystem::path& path) noexcept
 
         if (!ReadFile(file, bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr) || read != bytes.size())
         {
-            return {{}, L"Settings could not be read; the default shortcut is active."};
+            return {{}, L"Settings could not be read. The default shortcut is active."};
         }
 
         const auto settings = parse_settings(bytes);
 
         if (!settings)
         {
-            return {{}, L"Settings were invalid; the default shortcut is active."};
+            return {{}, L"Settings were invalid. The default shortcut is active."};
         }
 
         return {*settings, {}};
     }
     catch (...)
     {
-        return {{}, L"Settings could not be loaded; defaults are active."};
+        return {{}, L"Settings could not be loaded. Defaults are active."};
     }
 }
 
@@ -468,14 +468,15 @@ std::expected<PreparedLaunch, LaunchResult> prepare_launch(const LaunchRequest& 
 
     if (!request.client_path.is_absolute() || !std::filesystem::is_regular_file(request.client_path, error))
     {
-        return std::unexpected(LaunchResult{
-            LaunchStatus::missing_client, L"Battle.net could not be found. Install or repair it, then refresh.", 0});
+        return std::unexpected(LaunchResult{LaunchStatus::missing_client,
+                                            L"Battle.net is missing. Install or repair it, then press F5 to rescan.",
+                                            0});
     }
 
     if (!validate_game(request.game))
     {
         return std::unexpected(LaunchResult{LaunchStatus::missing_installation,
-                                            L"The game installation changed or is missing. Refresh your library.",
+                                            L"The game installation changed or is missing. Press F5 to rescan.",
                                             0});
     }
 
@@ -514,7 +515,7 @@ LaunchResult launch_game(const LaunchRequest& request, std::stop_token stop, con
     }
     catch (...)
     {
-        return {LaunchStatus::process_error, L"The launch request failed. Refresh and try again.", 0};
+        return {LaunchStatus::process_error, L"The launch request failed. Press F5 to rescan and try again.", 0};
     }
 }
 

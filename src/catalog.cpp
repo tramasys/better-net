@@ -912,7 +912,7 @@ Catalog discover(std::stop_token cancellation)
             status.scan_failed = true;
 
             status.warnings.push_back(
-                L"Windows ProgramData is unavailable; Battle.net Agent records could not be scanned.");
+                L"Windows ProgramData is unavailable. Battle.net Agent records could not be scanned.");
         }
 
         if (valid_program_data && !cancellation.stop_requested())
@@ -941,7 +941,7 @@ Catalog discover(std::stop_token cancellation)
                     status.scan_failed = true;
 
                     status.warnings.push_back(
-                        L"Battle.net Agent records could not be read. Refresh after updates finish.");
+                        L"Battle.net Agent records could not be read. Press F5 to rescan after updates finish.");
                 }
             }
             else if (error)
@@ -985,7 +985,7 @@ Catalog discover(std::stop_token cancellation)
     catch (const std::exception&)
     {
         status.scan_failed = true;
-        status.warnings.push_back(L"Discovery could not finish. Check installation access and refresh.");
+        status.warnings.push_back(L"Discovery could not finish. Check installation access and press F5 to rescan.");
         return status;
     }
 }
