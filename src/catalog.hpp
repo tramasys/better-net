@@ -8,10 +8,8 @@
 #include <string_view>
 #include <vector>
 
-namespace bnet
-{
-struct Game
-{
+namespace bnet {
+struct Game {
     std::wstring product_id;
     std::wstring title;
     std::wstring version;
@@ -21,23 +19,20 @@ struct Game
     std::wstring launch_code;
 };
 
-struct Catalog
-{
+struct Catalog {
     std::vector<Game> games;
     std::filesystem::path client_path;
     std::vector<std::wstring> warnings;
     bool scan_failed = false;
 };
 
-struct InstallationRecord
-{
+struct InstallationRecord {
     std::wstring product_id;
     std::filesystem::path install_path;
     std::wstring display_name;
 };
 
-struct AgentRecords
-{
+struct AgentRecords {
     std::vector<InstallationRecord> records;
     bool malformed = false;
 };

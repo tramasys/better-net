@@ -13,44 +13,36 @@
 #include <stdexcept>
 #include <string>
 
-namespace
-{
-void require(bool condition, const char* message)
-{
-    if (!condition)
-    {
+namespace {
+void require(bool condition, const char* message) {
+    if (!condition) {
         throw std::runtime_error(message);
     }
 }
 
-struct Fixture
-{
+struct Fixture {
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / (L"better-net tests \u00fc " + std::to_wstring(GetCurrentProcessId()) +
                                                   L" " + std::to_wstring(GetTickCount64()));
 
-    Fixture()
-    {
+    Fixture() {
         require(std::filesystem::create_directory(root), "Fixture directory must be new");
     }
 
-    ~Fixture()
-    {
+    ~Fixture() {
         std::error_code error;
         std::filesystem::remove_all(root, error);
     }
 };
 
-void write_file(const std::filesystem::path& path, std::string_view bytes)
-{
+void write_file(const std::filesystem::path& path, std::string_view bytes) {
     std::filesystem::create_directories(path.parent_path());
     std::ofstream stream(path, std::ios::binary);
     stream << bytes;
     require(stream.good(), "Fixture write failed");
 }
 
-void test_discovery_and_launch(const std::filesystem::path& root)
-{
+void test_discovery_and_launch(const std::filesystem::path& root) {
     const auto installation = root / L"Call of Duty";
     const auto executable = installation / L"_retail_" / L"cod.exe";
     const auto client = root / L"Battle.net.exe";
@@ -77,8 +69,7 @@ void test_discovery_and_launch(const std::filesystem::path& root)
     bnet::LaunchRequest request{catalog.games.front(), client};
     int dispatches = 0;
 
-    const bnet::ProcessAdapter adapter = [&](const bnet::PreparedLaunch& prepared)
-    {
+    const bnet::ProcessAdapter adapter = [&](const bnet::PreparedLaunch& prepared) {
         ++dispatches;
         int count = 0;
         auto* arguments = CommandLineToArgvW(prepared.command_line.c_str(), &count);
@@ -112,8 +103,7 @@ void test_discovery_and_launch(const std::filesystem::path& root)
 
     require(dispatches == 1, "Invalid requests must never reach the process adapter");
 
-    struct DirectCase
-    {
+    struct DirectCase {
         std::wstring_view product;
         std::wstring_view directory;
         std::wstring_view executable;
@@ -123,8 +113,7 @@ void test_discovery_and_launch(const std::filesystem::path& root)
     const std::array direct_cases = {DirectCase{L"wow", L"World of Warcraft", L"_retail_/Wow.exe", L""},
                                      DirectCase{L"diablo3", L"Diablo III", L"x64/Diablo III64.exe", L"-launch"}};
 
-    for (const auto& direct : direct_cases)
-    {
+    for (const auto& direct : direct_cases) {
         const auto direct_installation = root / direct.directory;
         const auto direct_executable = direct_installation / direct.executable;
         write_file(direct_executable, bytes);
@@ -136,8 +125,7 @@ void test_discovery_and_launch(const std::filesystem::path& root)
         require(direct_catalog.games.size() == 1, "Direct games must be discoverable without Battle.net");
         const bnet::LaunchRequest direct_request{direct_catalog.games.front(), {}};
 
-        const bnet::ProcessAdapter direct_adapter = [&](const bnet::PreparedLaunch& prepared)
-        {
+        const bnet::ProcessAdapter direct_adapter = [&](const bnet::PreparedLaunch& prepared) {
             ++dispatches;
             int count = 0;
             auto* arguments = CommandLineToArgvW(prepared.command_line.c_str(), &count);
@@ -169,8 +157,7 @@ void test_discovery_and_launch(const std::filesystem::path& root)
     require(dispatches == 3, "Only valid game requests may reach a process adapter");
 }
 
-void test_launch_guard()
-{
+void test_launch_guard() {
     using namespace std::chrono_literals;
     bnet::LaunchGuard guard(5s);
     const auto start = bnet::LaunchGuard::Clock::time_point{};
@@ -187,8 +174,7 @@ void test_launch_guard()
     require(!guard.busy(start + 5004ms), "Failed launch must allow retry");
 }
 
-void test_running_games(const std::filesystem::path& root)
-{
+void test_running_games(const std::filesystem::path& root) {
     std::array<wchar_t, 32768> current{};
     const auto length = GetModuleFileNameW(nullptr, current.data(), static_cast<DWORD>(current.size()));
     require(length > 0 && length < current.size(), "Test executable path must be available");
@@ -201,16 +187,12 @@ void test_running_games(const std::filesystem::path& root)
     require(std::filesystem::copy_file(current.data(), executable) && std::filesystem::copy_file(current.data(), other),
             "Suspended process fixtures must copy");
 
-    struct Child
-    {
+    struct Child {
         PROCESS_INFORMATION process{};
 
-        ~Child()
-        {
-            if (process.hProcess)
-            {
-                if (WaitForSingleObject(process.hProcess, 0) == WAIT_TIMEOUT)
-                {
+        ~Child() {
+            if (process.hProcess) {
+                if (WaitForSingleObject(process.hProcess, 0) == WAIT_TIMEOUT) {
                     TerminateProcess(process.hProcess, 1);
                     WaitForSingleObject(process.hProcess, 5000);
                 }
@@ -218,8 +200,7 @@ void test_running_games(const std::filesystem::path& root)
                 CloseHandle(process.hProcess);
             }
 
-            if (process.hThread)
-            {
+            if (process.hThread) {
                 CloseHandle(process.hThread);
             }
         }
@@ -255,8 +236,7 @@ void test_running_games(const std::filesystem::path& root)
     int dispatches = 0;
     const bnet::LaunchRequest request{games[0], {}};
 
-    const bnet::ProcessAdapter adapter = [&](const bnet::PreparedLaunch&)
-    {
+    const bnet::ProcessAdapter adapter = [&](const bnet::PreparedLaunch&) {
         ++dispatches;
         return bnet::LaunchResult{bnet::LaunchStatus::requested, L"Dry run", 0};
     };
@@ -277,8 +257,7 @@ void test_running_games(const std::filesystem::path& root)
             "An exited game must allow one launch through the dry-run adapter");
 }
 
-void test_carousel()
-{
+void test_carousel() {
     require(bnet::visible_game_count(0) == 0 && bnet::visible_game_count(1) == 1 && bnet::visible_game_count(2) == 2 &&
                 bnet::visible_game_count(7) == 3,
             "Only installed games may occupy cards, with at most three visible");
@@ -291,8 +270,7 @@ void test_carousel()
             "Carousel must keep selection visible through boundaries, wraparound, and rescans");
 }
 
-void test_hotkey_settings(const std::filesystem::path& root)
-{
+void test_hotkey_settings(const std::filesystem::path& root) {
     const auto path = root / L"settings.ini";
     bnet::Settings settings;
     settings.hotkey_key = 'J';
@@ -307,8 +285,7 @@ void test_hotkey_settings(const std::filesystem::path& root)
     require(!recovered.warning.empty() && recovered.value.hotkey_key == 'B', "Corrupt settings must recover safely");
 }
 
-void test_shortcut_toggle(const std::filesystem::path& root)
-{
+void test_shortcut_toggle(const std::filesystem::path& root) {
     const auto executable = root / L"better-net.exe";
     const auto shortcut = root / L"better-net.lnk";
     write_file(executable, "Fixture only");
@@ -316,10 +293,8 @@ void test_shortcut_toggle(const std::filesystem::path& root)
     require(bnet::create_launcher_shortcut(executable, shortcut, settings).has_value(), "Shortcut must enable");
     require(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)), "Shortcut test COM setup failed");
 
-    struct Apartment
-    {
-        ~Apartment()
-        {
+    struct Apartment {
+        ~Apartment() {
             CoUninitialize();
         }
     };
@@ -336,8 +311,7 @@ void test_shortcut_toggle(const std::filesystem::path& root)
                 SUCCEEDED(link.As(&persistence)),
             "Shortcut test reader must initialize");
 
-    const auto read_hotkey = [&]
-    {
+    const auto read_hotkey = [&] {
         require(SUCCEEDED(persistence->Load(shortcut.c_str(), STGM_READ)),
                 "Normal shortcut entry must remain readable");
         std::array<wchar_t, 32768> target{};
@@ -368,10 +342,8 @@ void test_shortcut_toggle(const std::filesystem::path& root)
 }
 }
 
-int main()
-{
-    try
-    {
+int main() {
+    try {
         const Fixture fixture;
         test_discovery_and_launch(fixture.root);
         test_launch_guard();
@@ -381,9 +353,7 @@ int main()
         test_shortcut_toggle(fixture.root);
         std::cout << "Core checks passed without launching games.\n";
         return 0;
-    }
-    catch (const std::exception& error)
-    {
+    } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;
     }

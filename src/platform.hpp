@@ -13,17 +13,14 @@
 #include <string_view>
 #include <vector>
 
-namespace bnet
-{
-struct Settings
-{
+namespace bnet {
+struct Settings {
     std::uint32_t hotkey_modifiers = 3;
     std::uint32_t hotkey_key = 'B';
     bool start_hidden = false;
 };
 
-struct SettingsLoad
-{
+struct SettingsLoad {
     Settings value;
     std::wstring warning;
 };
@@ -36,8 +33,7 @@ SettingsLoad load_settings(const std::filesystem::path& path = settings_path()) 
 std::expected<void, std::wstring> save_settings(const Settings& settings,
                                                 const std::filesystem::path& path = settings_path()) noexcept;
 
-enum class LaunchStatus
-{
+enum class LaunchStatus {
     requested,
     already_running,
     missing_client,
@@ -47,22 +43,19 @@ enum class LaunchStatus
     cancelled
 };
 
-struct LaunchResult
-{
+struct LaunchResult {
     LaunchStatus status = LaunchStatus::process_error;
     std::wstring message;
     std::uint32_t native_error = 0;
     bool sent() const noexcept;
 };
 
-struct LaunchRequest
-{
+struct LaunchRequest {
     Game game;
     std::filesystem::path client_path;
 };
 
-struct PreparedLaunch
-{
+struct PreparedLaunch {
     std::filesystem::path application;
     std::wstring command_line;
     std::filesystem::path working_directory;
@@ -77,8 +70,7 @@ launch_game(const LaunchRequest& request, std::stop_token stop = {}, const Proce
 
 std::optional<std::vector<bool>> running_games(std::span<const Game> games, std::stop_token stop = {}) noexcept;
 
-class LaunchGuard
-{
+class LaunchGuard {
 public:
     using Clock = std::chrono::steady_clock;
     explicit LaunchGuard(std::chrono::milliseconds timeout = std::chrono::seconds(5));
