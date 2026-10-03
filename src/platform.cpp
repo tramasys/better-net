@@ -20,7 +20,6 @@ namespace
 class Handle
 {
 public:
-
     explicit Handle(HANDLE value) noexcept : value_(value)
     {
     }
@@ -35,6 +34,7 @@ public:
 
     Handle(const Handle&) = delete;
     Handle& operator=(const Handle&) = delete;
+
 private:
     HANDLE value_;
 };
@@ -42,7 +42,6 @@ private:
 class TemporaryFile
 {
 public:
-
     explicit TemporaryFile(std::filesystem::path path) : path_(std::move(path))
     {
     }
@@ -117,6 +116,30 @@ std::filesystem::path temporary_path(const std::filesystem::path& destination)
               std::to_wstring(serial.fetch_add(1)) + L".tmp";
 
     return result;
+}
+
+std::expected<void, std::wstring> save_shell_link(IPersistFile& persistence, const std::filesystem::path& path)
+{
+    const auto temporary = temporary_path(path);
+    TemporaryFile cleanup(temporary);
+    const HRESULT result = persistence.Save(temporary.c_str(), TRUE);
+
+    if (FAILED(result))
+    {
+        return std::unexpected(L"Windows could not save the launcher shortcut: " +
+                               windows_error(static_cast<DWORD>(result)));
+    }
+
+    const bool replacing = GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+
+    if (!MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    {
+        return std::unexpected(L"The shortcut could not be saved: " + windows_error(GetLastError()));
+    }
+
+    cleanup.release();
+    SHChangeNotify(replacing ? SHCNE_UPDATEITEM : SHCNE_CREATE, SHCNF_PATHW | SHCNF_FLUSH, path.c_str(), nullptr);
+    return {};
 }
 
 std::expected<void, std::wstring> atomic_write(const std::filesystem::path& path, std::string_view content)
@@ -468,9 +491,8 @@ std::expected<PreparedLaunch, LaunchResult> prepare_launch(const LaunchRequest& 
 
     if (!request.client_path.is_absolute() || !std::filesystem::is_regular_file(request.client_path, error))
     {
-        return std::unexpected(LaunchResult{LaunchStatus::missing_client,
-                                            L"Battle.net is missing. Install or repair it, then press F5 to rescan.",
-                                            0});
+        return std::unexpected(LaunchResult{
+            LaunchStatus::missing_client, L"Battle.net is missing. Install or repair it, then press F5 to rescan.", 0});
     }
 
     if (!validate_game(request.game))
@@ -670,33 +692,13 @@ std::expected<void, std::wstring> create_launcher_shortcut(const std::filesystem
             result = link.As(&persistence);
         }
 
-        const auto temporary = temporary_path(shortcut_path);
-        TemporaryFile cleanup(temporary);
-
-        if (SUCCEEDED(result))
-        {
-            result = persistence->Save(temporary.c_str(), TRUE);
-        }
-
         if (FAILED(result))
         {
             return std::unexpected(L"Windows could not save the launcher shortcut: " +
                                    windows_error(static_cast<DWORD>(result)));
         }
 
-        const bool replacing = GetFileAttributesW(shortcut_path.c_str()) != INVALID_FILE_ATTRIBUTES;
-
-        if (!MoveFileExW(temporary.c_str(), shortcut_path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-        {
-            return std::unexpected(L"The shortcut could not be installed: " + windows_error(GetLastError()));
-        }
-
-        cleanup.release();
-
-        SHChangeNotify(
-            replacing ? SHCNE_UPDATEITEM : SHCNE_CREATE, SHCNF_PATHW | SHCNF_FLUSH, shortcut_path.c_str(), nullptr);
-
-        return {};
+        return save_shell_link(*persistence.Get(), shortcut_path);
     }
     catch (...)
     {
@@ -732,22 +734,35 @@ install_launcher_shortcut(const std::filesystem::path& executable, const Setting
     }
 }
 
-bool launcher_shortcut_matches(const std::filesystem::path& executable, const Settings& settings, bool desktop) noexcept
+std::expected<void, std::wstring> disable_launcher_shortcut_at(const std::filesystem::path& executable,
+                                                               const std::filesystem::path& shortcut_path) noexcept
 {
     try
     {
-        const auto folder = known_folder(desktop ? FOLDERID_Desktop : FOLDERID_Programs);
-
-        if (folder.empty())
+        if (!executable.is_absolute() || !shortcut_path.is_absolute() || shortcut_path.extension() != L".lnk")
         {
-            return false;
+            return std::unexpected(L"The launcher path or shortcut path is invalid.");
+        }
+
+        const DWORD attributes = GetFileAttributesW(shortcut_path.c_str());
+
+        if (attributes == INVALID_FILE_ATTRIBUTES)
+        {
+            const DWORD error = GetLastError();
+
+            if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+            {
+                return {};
+            }
+
+            return std::unexpected(L"The Windows shortcut could not be read: " + windows_error(error));
         }
 
         const HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
         if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE)
         {
-            return false;
+            return std::unexpected(L"Windows could not update the launcher shortcut in this session.");
         }
 
         struct Apartment
@@ -772,13 +787,128 @@ bool launcher_shortcut_matches(const std::filesystem::path& executable, const Se
                                     CLSCTX_INPROC_SERVER,
                                     IID_IShellLinkW,
                                     reinterpret_cast<void**>(link.GetAddressOf()))) ||
-            FAILED(link.As(&persistence)) || FAILED(persistence->Load((folder / L"better-net.lnk").c_str(), STGM_READ)))
+            FAILED(link.As(&persistence)) || FAILED(persistence->Load(shortcut_path.c_str(), STGM_READ)))
         {
-            return false;
+            return std::unexpected(L"Windows could not read the launcher shortcut.");
         }
 
         std::array<wchar_t, 32768> target{};
+
+        if (link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH) != S_OK ||
+            CompareStringOrdinal(target.data(), -1, executable.c_str(), -1, TRUE) != CSTR_EQUAL)
+        {
+            return std::unexpected(L"This shortcut belongs to another application and was left unchanged.");
+        }
+
         WORD hotkey = 0;
+
+        if (FAILED(link->GetHotkey(&hotkey)))
+        {
+            return std::unexpected(L"Windows could not read the shortcut key.");
+        }
+
+        if (hotkey == 0)
+        {
+            return {};
+        }
+
+        if (FAILED(link->SetHotkey(0)))
+        {
+            return std::unexpected(L"Windows could not disable the shortcut key.");
+        }
+
+        return save_shell_link(*persistence.Get(), shortcut_path);
+    }
+    catch (...)
+    {
+        return std::unexpected(L"The Windows shortcut key could not be disabled.");
+    }
+}
+
+std::expected<void, std::wstring> disable_launcher_shortcut(const std::filesystem::path& executable,
+                                                            bool desktop) noexcept
+{
+    try
+    {
+        const auto folder = known_folder(desktop ? FOLDERID_Desktop : FOLDERID_Programs);
+
+        if (folder.empty())
+        {
+            return std::unexpected(L"Windows could not locate your shortcut directory.");
+        }
+
+        return disable_launcher_shortcut_at(executable, folder / L"better-net.lnk");
+    }
+    catch (...)
+    {
+        return std::unexpected(L"The Windows shortcut key could not be disabled.");
+    }
+}
+
+namespace
+{
+std::optional<WORD> read_owned_shortcut_hotkey(const std::filesystem::path& executable, bool desktop)
+{
+    const auto folder = known_folder(desktop ? FOLDERID_Desktop : FOLDERID_Programs);
+
+    if (folder.empty())
+    {
+        return std::nullopt;
+    }
+
+    const HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+    if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE)
+    {
+        return std::nullopt;
+    }
+
+    struct Apartment
+    {
+        bool owned;
+
+        ~Apartment()
+        {
+            if (owned)
+            {
+                CoUninitialize();
+            }
+        }
+    };
+
+    const Apartment apartment{SUCCEEDED(initialized)};
+    Microsoft::WRL::ComPtr<IShellLinkW> link;
+    Microsoft::WRL::ComPtr<IPersistFile> persistence;
+
+    if (FAILED(CoCreateInstance(CLSID_ShellLink,
+                                nullptr,
+                                CLSCTX_INPROC_SERVER,
+                                IID_IShellLinkW,
+                                reinterpret_cast<void**>(link.GetAddressOf()))) ||
+        FAILED(link.As(&persistence)) || FAILED(persistence->Load((folder / L"better-net.lnk").c_str(), STGM_READ)))
+    {
+        return std::nullopt;
+    }
+
+    std::array<wchar_t, 32768> target{};
+    WORD hotkey = 0;
+
+    if (link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH) != S_OK ||
+        FAILED(link->GetHotkey(&hotkey)) ||
+        CompareStringOrdinal(target.data(), -1, executable.c_str(), -1, TRUE) != CSTR_EQUAL)
+    {
+        return std::nullopt;
+    }
+
+    return hotkey;
+}
+}
+
+bool launcher_shortcut_matches(const std::filesystem::path& executable, const Settings& settings, bool desktop) noexcept
+{
+    try
+    {
+        const auto hotkey = read_owned_shortcut_hotkey(executable, desktop);
         BYTE modifiers = 0;
 
         if ((settings.hotkey_modifiers & MOD_CONTROL) != 0)
@@ -796,10 +926,20 @@ bool launcher_shortcut_matches(const std::filesystem::path& executable, const Se
             modifiers |= HOTKEYF_SHIFT;
         }
 
-        return SUCCEEDED(link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH)) &&
-               SUCCEEDED(link->GetHotkey(&hotkey)) &&
-               CompareStringOrdinal(target.data(), -1, executable.c_str(), -1, TRUE) == CSTR_EQUAL &&
-               hotkey == MAKEWORD(static_cast<BYTE>(settings.hotkey_key), modifiers);
+        return hotkey && *hotkey == MAKEWORD(static_cast<BYTE>(settings.hotkey_key), modifiers);
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+bool launcher_shortcut_enabled(const std::filesystem::path& executable, bool desktop) noexcept
+{
+    try
+    {
+        const auto hotkey = read_owned_shortcut_hotkey(executable, desktop);
+        return hotkey && *hotkey != 0;
     }
     catch (...)
     {

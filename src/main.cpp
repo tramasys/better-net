@@ -36,7 +36,6 @@ constexpr int minimize_id = 106;
 constexpr int close_id = 107;
 constexpr int card_base = 200;
 constexpr int hotkey_id = 300;
-constexpr int save_id = 301;
 constexpr int shortcut_id = 302;
 constexpr int cancel_id = 303;
 constexpr UINT32 background_color = 0x111113;
@@ -263,12 +262,11 @@ struct App
     HWND hovered_play = nullptr;
     std::array<HWND, 3> cards{};
     std::array<HWND, 3> caption_buttons{};
-    std::array<HWND, 4> setting_buttons{};
+    std::array<HWND, 3> setting_buttons{};
     HFONT control_font = nullptr;
     HBRUSH background = CreateSolidBrush(RGB(17, 17, 19));
     Graphics graphics;
     bnet::Settings settings;
-    bnet::Settings pending_settings;
     bnet::Catalog catalog;
     bnet::LaunchGuard launch_guard;
     std::jthread scan_worker;
@@ -284,6 +282,7 @@ struct App
     bool tray_added = false;
     bool hotkey_registered = false;
     bool shortcut_installed = false;
+    bool shortcut_matches = false;
     bool settings_open = false;
     bool recording = false;
     bool dry_run = false;
@@ -409,8 +408,7 @@ struct App
         }
         setting_buttons = {button(cancel_id, L"Back to library"),
                            button(hotkey_id, L"Change shortcut"),
-                           button(save_id, L"Save shortcut"),
-                           button(shortcut_id, L"Enable launch when closed")};
+                           button(shortcut_id, L"Launch when closed. Off")};
         status_control = CreateWindowExW(0,
                                          L"STATIC",
                                          library_status.c_str(),
@@ -493,12 +491,11 @@ struct App
         const float left = (width - panel_width) / 2.0F;
         move(setting_buttons[0], (width - 120.0F) / 2.0F, 88, 120, 36, settings_open);
         move(setting_buttons[1], left, 188, panel_width, 52, settings_open);
-        move(setting_buttons[2], left, 292, panel_width, 44, settings_open);
-        move(setting_buttons[3], left, 348, panel_width, 44, settings_open);
+        move(setting_buttons[2], left, 292, panel_width, 56, settings_open);
         const float status_width = std::min(640.0F, width - 56.0F);
         move(status_control,
              (width - status_width) / 2.0F,
-             settings_open ? 414.0F : height - 66.0F,
+             settings_open ? 364.0F : height - 66.0F,
              status_width,
              settings_open ? 82.0F : 38.0F,
              settings_open || !library_status.empty());
@@ -530,13 +527,14 @@ struct App
     {
         settings_open = open;
         recording = false;
-        pending_settings = settings;
-        SetWindowTextW(setting_buttons[1], bnet::hotkey_text(pending_settings).c_str());
+        SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
         if (open)
         {
-            set_status(shortcut_installed  ? L"Windows shortcut enabled for opening better-net."
-                       : hotkey_registered ? L"Enable launch when closed to make your shortcut available at any time."
-                                           : L"That shortcut is already in use. Try another key combination.",
+            refresh_shortcut_state();
+            set_status(shortcut_matches     ? L"Your shortcut can start better-net when it is closed."
+                       : shortcut_installed ? L"Launch when closed uses another key. Turn it off and on to update it."
+                       : hotkey_registered  ? L"Your shortcut works while better-net is running."
+                                            : L"That shortcut is already in use. Try another key combination.",
                        true);
         }
         layout();
@@ -549,7 +547,7 @@ struct App
         {
             return;
         }
-        auto candidate = pending_settings;
+        auto candidate = settings;
         candidate.hotkey_key = static_cast<std::uint32_t>(key);
         candidate.hotkey_modifiers = (GetKeyState(VK_CONTROL) < 0 ? MOD_CONTROL : 0) |
                                      (GetKeyState(VK_MENU) < 0 ? MOD_ALT : 0) |
@@ -560,10 +558,9 @@ struct App
             set_status(L"Use Ctrl or Alt with a letter, number or function key.", true);
             return;
         }
-        pending_settings = candidate;
         recording = false;
-        SetWindowTextW(setting_buttons[1], bnet::hotkey_text(pending_settings).c_str());
-        set_status(L"Choose Save shortcut to apply this combination.", true);
+        save_shortcut(candidate);
+        SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
         InvalidateRect(window, nullptr, TRUE);
     }
 
@@ -633,7 +630,8 @@ struct App
                               DWRITE_TEXT_ALIGNMENT_CENTER);
                 graphics.text(target,
                               brush,
-                              recording ? L"Press your shortcut. Esc cancels." : L"Click the keys to change them.",
+                              recording ? L"Press your shortcut. Esc cancels."
+                                        : L"Click to change. Saves automatically.",
                               D2D1::RectF(28, 252, width - 28, 280),
                               0,
                               muted_color,
@@ -841,17 +839,47 @@ struct App
                 line(21, 11, 11, 21);
             }
         }
+        else if (item.CtlID == shortcut_id)
+        {
+            const auto frame = D2D1::RoundedRect(D2D1::RectF(0.75F, 0.75F, width - 0.75F, height - 0.75F), 8, 8);
+            brush->SetColor(color(down ? 0x453958 : hover ? 0x242227 : surface_color));
+            target->FillRoundedRectangle(frame, brush);
+            brush->SetColor(color(focused ? accent_color : hover ? accent_hover_border_color : border_color));
+            target->DrawRoundedRectangle(frame, brush);
+            graphics.text(target,
+                          brush,
+                          L"Launch when closed",
+                          D2D1::RectF(16, 0, width - 108, height),
+                          1,
+                          text_color,
+                          DWRITE_TEXT_ALIGNMENT_LEADING,
+                          true);
+            graphics.text(target,
+                          brush,
+                          shortcut_installed ? L"On" : L"Off",
+                          D2D1::RectF(width - 100, 0, width - 72, height),
+                          1,
+                          shortcut_installed ? accent_color : muted_color,
+                          DWRITE_TEXT_ALIGNMENT_CENTER,
+                          true);
+            const float middle = height / 2;
+            const auto track = D2D1::RectF(width - 60, middle - 12, width - 16, middle + 12);
+            graphics.round(target,
+                           brush,
+                           track,
+                           12,
+                           shortcut_installed ? (hover ? accent_hover_border_color : accent_color)
+                                              : (hover ? 0x48444F : 0x343139));
+            brush->SetColor(color(shortcut_installed ? background_color : text_color));
+            target->FillEllipse(
+                D2D1::Ellipse(D2D1::Point2F(shortcut_installed ? width - 28 : width - 48, middle), 8, 8), brush);
+        }
         else
         {
-            const bool save_hover = item.CtlID == save_id && hover && IsWindowEnabled(item.hwndItem);
             const auto frame = D2D1::RoundedRect(D2D1::RectF(0.75F, 0.75F, width - 0.75F, height - 0.75F), 8, 8);
-            brush->SetColor(color(down                    ? 0x453958
-                                  : save_hover            ? accent_hover_color
-                                  : item.CtlID == save_id ? accent_surface
-                                  : hover                 ? 0x242227
-                                                          : surface_color));
+            brush->SetColor(color(down ? 0x453958 : hover ? 0x242227 : surface_color));
             target->FillRoundedRectangle(frame, brush);
-            brush->SetColor(color(save_hover ? accent_hover_border_color : focused ? accent_color : border_color));
+            brush->SetColor(color(focused ? accent_color : border_color));
             target->DrawRoundedRectangle(frame, brush);
             std::array<wchar_t, 256> label{};
             GetWindowTextW(item.hwndItem, label.data(), static_cast<int>(label.size()));
@@ -860,7 +888,7 @@ struct App
                           label.data(),
                           D2D1::RectF(16, 0, width - 16, height),
                           item.CtlID == hotkey_id ? 2 : 1,
-                          item.CtlID == save_id && !save_hover ? 0xD5CBF4 : text_color,
+                          text_color,
                           DWRITE_TEXT_ALIGNMENT_CENTER,
                           true);
         }
@@ -930,11 +958,8 @@ struct App
             SetWindowTextW(setting_buttons[1], L"Press your keys");
             InvalidateRect(window, nullptr, TRUE);
             break;
-        case save_id:
-            save_shortcut(false);
-            break;
         case shortcut_id:
-            save_shortcut(true);
+            toggle_launch_when_closed();
             break;
         case exit_id:
             shutdown();
@@ -944,19 +969,28 @@ struct App
         }
     }
 
-    void register_hotkey()
+    void refresh_shortcut_state()
     {
-        UnregisterHotKey(window, 1);
         std::array<wchar_t, 32768> executable{};
         const auto length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
 
-        shortcut_installed =
+        shortcut_matches =
             length > 0 && length < executable.size() && bnet::launcher_shortcut_matches(executable.data(), settings);
+        shortcut_installed =
+            length > 0 && length < executable.size() && bnet::launcher_shortcut_enabled(executable.data());
+        SetWindowTextW(setting_buttons[2], shortcut_installed ? L"Launch when closed. On" : L"Launch when closed. Off");
+        InvalidateRect(setting_buttons[2], nullptr, FALSE);
+    }
+
+    void register_hotkey()
+    {
+        UnregisterHotKey(window, 1);
+        refresh_shortcut_state();
 
         hotkey_registered =
             RegisterHotKey(window, 1, settings.hotkey_modifiers | MOD_NOREPEAT, settings.hotkey_key) != 0;
 
-        if (!hotkey_registered && !shortcut_installed)
+        if (!hotkey_registered && !shortcut_matches)
         {
             set_status(L"That shortcut is already in use. Choose another key in settings.", true);
         }
@@ -994,6 +1028,12 @@ struct App
 
     void restore()
     {
+        if (recording)
+        {
+            recording = false;
+            SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
+            set_status(L"Shortcut unchanged.", true);
+        }
         ShowWindow(window, SW_RESTORE);
         center_window(false);
         SetForegroundWindow(window);
@@ -1019,6 +1059,7 @@ struct App
     void hide()
     {
         recording = false;
+        SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
         ShowWindow(window, tray_added ? SW_HIDE : SW_MINIMIZE);
     }
 
@@ -1246,11 +1287,8 @@ struct App
         DestroyWindow(window);
     }
 
-    void save_shortcut(bool install)
+    void save_shortcut(const bnet::Settings& replacement)
     {
-        recording = false;
-        const auto replacement = pending_settings;
-
         if (!bnet::valid_hotkey(replacement))
         {
             set_status(L"Use Ctrl or Alt with a letter, number, or function key except F12.", true);
@@ -1259,11 +1297,15 @@ struct App
 
         const bool changed =
             replacement.hotkey_key != settings.hotkey_key || replacement.hotkey_modifiers != settings.hotkey_modifiers;
+        refresh_shortcut_state();
+        if (!changed && (!shortcut_installed || shortcut_matches))
+        {
+            set_status(L"This shortcut is already saved.", true);
+            return;
+        }
 
-        const bool update_link = install || shortcut_installed;
         std::array<wchar_t, 32768> executable{};
-
-        if (update_link)
+        if (shortcut_installed)
         {
             const auto length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
 
@@ -1280,36 +1322,93 @@ struct App
             return;
         }
 
-        UnregisterHotKey(window, 2);
         const auto saved = bnet::save_settings(replacement);
-
         if (!saved)
         {
+            UnregisterHotKey(window, 2);
             set_status(saved.error(), true);
             return;
         }
 
-        settings = replacement;
-
-        if (update_link)
+        if (shortcut_installed)
         {
+            UnregisterHotKey(window, 2);
             UnregisterHotKey(window, 1);
-            const auto created = bnet::install_launcher_shortcut(executable.data(), settings);
-            shortcut_installed = created.has_value();
-            register_hotkey();
-
-            set_status(created ? L"Saved. This key can start better-net when it is closed." : created.error(), true);
+            const auto created = bnet::install_launcher_shortcut(executable.data(), replacement);
+            if (!created)
+            {
+                const auto restored = bnet::save_settings(settings);
+                if (!restored)
+                {
+                    settings = replacement;
+                    SendMessageW(window, WM_SETHOTKEY, 0, 0);
+                    register_hotkey();
+                    set_status(L"Shortcut saved. Launch when closed could not be updated. " + created.error(), true);
+                }
+                else
+                {
+                    register_hotkey();
+                    set_status(created.error(), true);
+                }
+                return;
+            }
         }
-        else
-        {
-            register_hotkey();
 
-            set_status(hotkey_registered ? L"Saved. Your shortcut opens better-net while it runs."
-                                         : L"Saved, but this shortcut is already in use.",
-                       true);
-        }
+        UnregisterHotKey(window, 2);
+        settings = replacement;
+        SendMessageW(window, WM_SETHOTKEY, 0, 0);
+        register_hotkey();
+        set_status(shortcut_installed  ? L"Saved. Your shortcut can start better-net when it is closed."
+                   : hotkey_registered ? L"Saved. Your shortcut works while better-net is running."
+                                       : L"Saved, but this shortcut is already in use.",
+                   true);
+    }
 
+    void toggle_launch_when_closed()
+    {
+        recording = false;
+        SetWindowTextW(setting_buttons[1], bnet::hotkey_text(settings).c_str());
         InvalidateRect(window, nullptr, FALSE);
+        refresh_shortcut_state();
+        std::array<wchar_t, 32768> executable{};
+        const auto length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+        if (!length || length >= executable.size())
+        {
+            set_status(L"Could not find the better-net application.", true);
+            return;
+        }
+
+        if (!shortcut_installed && !hotkey_registered &&
+            !RegisterHotKey(window, 1, settings.hotkey_modifiers | MOD_NOREPEAT, settings.hotkey_key))
+        {
+            set_status(L"That shortcut is already in use. Try another key combination.", true);
+            return;
+        }
+
+        UnregisterHotKey(window, 1);
+        const auto updated = [&]() -> std::expected<void, std::wstring>
+        {
+            if (shortcut_installed)
+            {
+                return bnet::disable_launcher_shortcut(executable.data());
+            }
+            const auto installed = bnet::install_launcher_shortcut(executable.data(), settings);
+            if (!installed)
+            {
+                return std::unexpected(installed.error());
+            }
+            return {};
+        }();
+        if (updated)
+        {
+            SendMessageW(window, WM_SETHOTKEY, 0, 0);
+        }
+        register_hotkey();
+        set_status(!updated             ? updated.error()
+                   : shortcut_installed ? L"Your shortcut can start better-net when it is closed."
+                   : hotkey_registered  ? L"Your shortcut works while better-net is running."
+                                        : L"Launch when closed is off. This shortcut is currently in use.",
+                   true);
     }
 };
 
@@ -1705,7 +1804,7 @@ int run(HINSTANCE instance)
                 if (app.recording)
                 {
                     app.recording = false;
-                    SetWindowTextW(app.setting_buttons[1], bnet::hotkey_text(app.pending_settings).c_str());
+                    SetWindowTextW(app.setting_buttons[1], bnet::hotkey_text(app.settings).c_str());
                     InvalidateRect(app.window, nullptr, TRUE);
                 }
                 else if (app.settings_open)

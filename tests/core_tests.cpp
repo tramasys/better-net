@@ -1,7 +1,10 @@
 #include "platform.hpp"
 #include "presentation.hpp"
 #include <Windows.h>
+#include <ShlObj.h>
+#include <ShObjIdl.h>
 #include <shellapi.h>
+#include <wrl/client.h>
 #include <array>
 #include <chrono>
 #include <filesystem>
@@ -151,6 +154,66 @@ void test_hotkey_settings(const std::filesystem::path& root)
     const auto recovered = bnet::load_settings(path);
     require(!recovered.warning.empty() && recovered.value.hotkey_key == 'B', "Corrupt settings must recover safely");
 }
+
+void test_shortcut_toggle(const std::filesystem::path& root)
+{
+    const auto executable = root / L"better-net.exe";
+    const auto shortcut = root / L"better-net.lnk";
+    write_file(executable, "Fixture only");
+    const bnet::Settings settings;
+    require(bnet::create_launcher_shortcut(executable, shortcut, settings).has_value(), "Shortcut must enable");
+    require(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)), "Shortcut test COM setup failed");
+
+    struct Apartment
+    {
+        ~Apartment()
+        {
+            CoUninitialize();
+        }
+    };
+
+    const Apartment apartment;
+    Microsoft::WRL::ComPtr<IShellLinkW> link;
+    Microsoft::WRL::ComPtr<IPersistFile> persistence;
+
+    require(SUCCEEDED(CoCreateInstance(CLSID_ShellLink,
+                                       nullptr,
+                                       CLSCTX_INPROC_SERVER,
+                                       IID_IShellLinkW,
+                                       reinterpret_cast<void**>(link.GetAddressOf()))) &&
+                SUCCEEDED(link.As(&persistence)),
+            "Shortcut test reader must initialize");
+
+    const auto read_hotkey = [&]
+    {
+        require(SUCCEEDED(persistence->Load(shortcut.c_str(), STGM_READ)),
+                "Normal shortcut entry must remain readable");
+        std::array<wchar_t, 32768> target{};
+        std::array<wchar_t, 32> arguments{};
+        WORD hotkey = 0;
+
+        require(link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH) == S_OK &&
+                    executable.native() == target.data() &&
+                    SUCCEEDED(link->GetArguments(arguments.data(), static_cast<int>(arguments.size()))) &&
+                    std::wstring_view(arguments.data()) == L"--show" && SUCCEEDED(link->GetHotkey(&hotkey)),
+                "Shortcut target and arguments must survive toggling");
+        return hotkey;
+    };
+
+    const WORD enabled = MAKEWORD('B', HOTKEYF_CONTROL | HOTKEYF_ALT);
+    require(read_hotkey() == enabled, "Enabled shortcut must contain the configured key");
+    require(!bnet::disable_launcher_shortcut_at(root / L"other.exe", shortcut), "Foreign shortcut must be preserved");
+    require(read_hotkey() == enabled, "Ownership rejection must leave the key unchanged");
+    require(bnet::disable_launcher_shortcut_at(executable, shortcut).has_value(), "Owned shortcut must disable");
+    require(read_hotkey() == 0, "Disabled shortcut must retain its entry without a hotkey");
+    require(bnet::disable_launcher_shortcut_at(executable, shortcut).has_value(), "Repeated disable must succeed");
+
+    require(bnet::disable_launcher_shortcut_at(executable, root / L"missing.lnk").has_value(),
+            "Missing shortcut must already count as disabled");
+
+    require(bnet::create_launcher_shortcut(executable, shortcut, settings).has_value(), "Shortcut must enable again");
+    require(read_hotkey() == enabled, "Reenabled shortcut must restore its configured key");
+}
 }
 
 int main()
@@ -162,6 +225,7 @@ int main()
         test_launch_guard();
         test_carousel();
         test_hotkey_settings(fixture.root);
+        test_shortcut_toggle(fixture.root);
         std::cout << "Core checks passed without launching games.\n";
         return 0;
     }

@@ -81,6 +81,7 @@ public:
     void finish(std::uint64_t ticket, bool sent, Clock::time_point now = Clock::now());
     void cancel();
     bool busy(Clock::time_point now = Clock::now()) const;
+
 private:
     mutable std::mutex mutex_;
     std::chrono::milliseconds timeout_;
@@ -97,7 +98,15 @@ std::expected<std::filesystem::path, std::wstring> install_launcher_shortcut(con
                                                                              const Settings& settings,
                                                                              bool desktop = false) noexcept;
 
+std::expected<void, std::wstring> disable_launcher_shortcut_at(const std::filesystem::path& executable,
+                                                               const std::filesystem::path& shortcut_path) noexcept;
+
+std::expected<void, std::wstring> disable_launcher_shortcut(const std::filesystem::path& executable,
+                                                            bool desktop = false) noexcept;
+
 bool launcher_shortcut_matches(const std::filesystem::path& executable,
                                const Settings& settings,
                                bool desktop = false) noexcept;
+
+bool launcher_shortcut_enabled(const std::filesystem::path& executable, bool desktop = false) noexcept;
 }
