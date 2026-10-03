@@ -612,17 +612,10 @@ struct App
             {
                 graphics.text(target,
                               brush,
-                              L"Your shortcut",
+                              L"Shortcut",
                               D2D1::RectF(28, 142, width - 28, 174),
                               3,
                               text_color,
-                              DWRITE_TEXT_ALIGNMENT_CENTER);
-                graphics.text(target,
-                              brush,
-                              L"Open better-net from anywhere.",
-                              D2D1::RectF(28, 180, width - 28, 204),
-                              1,
-                              muted_color,
                               DWRITE_TEXT_ALIGNMENT_CENTER);
                 graphics.text(target,
                               brush,
