@@ -8,7 +8,6 @@
 #include <array>
 #include <atomic>
 #include <charconv>
-#include <limits>
 #include <memory>
 #include <system_error>
 #include <type_traits>
@@ -17,6 +16,7 @@
 
 namespace bnet {
 namespace {
+using Microsoft::WRL::ComPtr;
 constexpr wchar_t startup_key[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 using RegistryHandle = std::unique_ptr<std::remove_pointer_t<HKEY>, decltype(&RegCloseKey)>;
 
@@ -84,6 +84,39 @@ public:
 private:
     std::filesystem::path path_;
 };
+
+struct Apartment {
+    const HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+    ~Apartment() {
+        if (SUCCEEDED(result)) {
+            CoUninitialize();
+        }
+    }
+
+    bool available() const {
+        return SUCCEEDED(result) || result == RPC_E_CHANGED_MODE;
+    }
+};
+
+bool load_shell_link(const std::filesystem::path& path, ComPtr<IShellLinkW>& link, ComPtr<IPersistFile>& persistence) {
+    return SUCCEEDED(CoCreateInstance(
+               CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf()))) &&
+           SUCCEEDED(link.As(&persistence)) && SUCCEEDED(persistence->Load(path.c_str(), STGM_READ));
+}
+
+bool shortcut_targets(IShellLinkW& link, const std::filesystem::path& executable) {
+    std::array<wchar_t, 32768> target{};
+    return link.GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH) == S_OK &&
+           CompareStringOrdinal(target.data(), -1, executable.c_str(), -1, TRUE) == CSTR_EQUAL;
+}
+
+WORD shortcut_hotkey(const Settings& settings) {
+    const auto modifiers = ((settings.hotkey_modifiers & MOD_CONTROL) ? HOTKEYF_CONTROL : 0) |
+                           ((settings.hotkey_modifiers & MOD_ALT) ? HOTKEYF_ALT : 0) |
+                           ((settings.hotkey_modifiers & MOD_SHIFT) ? HOTKEYF_SHIFT : 0);
+    return MAKEWORD(static_cast<BYTE>(settings.hotkey_key), modifiers);
+}
 
 std::wstring windows_error(DWORD code) {
     std::array<wchar_t, 512> buffer{};
@@ -252,8 +285,7 @@ std::optional<Settings> parse_settings(std::string_view bytes) {
 }
 
 LaunchResult create_process(const PreparedLaunch& launch) {
-    std::vector<wchar_t> command(launch.command_line.begin(), launch.command_line.end());
-    command.push_back(L'\0');
+    auto command = launch.command_line;
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
@@ -621,81 +653,35 @@ std::expected<void, std::wstring> create_launcher_shortcut(const std::filesystem
             return std::unexpected(L"The shortcut directory is unavailable.");
         }
 
-        const HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        const Apartment apartment;
 
-        if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE) {
+        if (!apartment.available()) {
             return std::unexpected(L"Windows could not create a shortcut in this session.");
         }
 
-        struct Apartment {
-            bool owned;
+        ComPtr<IShellLinkW> link;
+        ComPtr<IPersistFile> persistence;
 
-            ~Apartment() {
-                if (owned) {
-                    CoUninitialize();
-                }
+        const auto check = [](HRESULT result) {
+            if (FAILED(result)) {
+                throw result;
             }
         };
 
-        const Apartment apartment{SUCCEEDED(initialized)};
-        Microsoft::WRL::ComPtr<IShellLinkW> link;
-
-        HRESULT result = CoCreateInstance(
-            CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf()));
-
-        BYTE modifiers = 0;
-
-        if ((settings.hotkey_modifiers & MOD_CONTROL) != 0) {
-            modifiers |= HOTKEYF_CONTROL;
-        }
-
-        if ((settings.hotkey_modifiers & MOD_ALT) != 0) {
-            modifiers |= HOTKEYF_ALT;
-        }
-
-        if ((settings.hotkey_modifiers & MOD_SHIFT) != 0) {
-            modifiers |= HOTKEYF_SHIFT;
-        }
-
-        if (SUCCEEDED(result)) {
-            result = link->SetPath(executable.c_str());
-        }
-
-        if (SUCCEEDED(result)) {
-            result = link->SetWorkingDirectory(executable.parent_path().c_str());
-        }
-
-        if (SUCCEEDED(result)) {
-            result = link->SetDescription(L"Open better-net");
-        }
-
-        if (SUCCEEDED(result)) {
-            result = link->SetArguments(L"--show");
-        }
-
-        if (SUCCEEDED(result)) {
-            result = link->SetHotkey(MAKEWORD(static_cast<BYTE>(settings.hotkey_key), modifiers));
-        }
-
-        if (SUCCEEDED(result)) {
-            result = link->SetShowCmd(SW_SHOWNORMAL);
-        }
-
-        if (SUCCEEDED(result)) {
-            result = link->SetIconLocation(executable.c_str(), 0);
-        }
-
-        Microsoft::WRL::ComPtr<IPersistFile> persistence;
-
-        if (SUCCEEDED(result)) {
-            result = link.As(&persistence);
-        }
-
-        if (FAILED(result)) {
-            return std::unexpected(L"Windows could not save the launcher shortcut: " + windows_error(static_cast<DWORD>(result)));
-        }
+        check(CoCreateInstance(
+            CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf())));
+        check(link->SetPath(executable.c_str()));
+        check(link->SetWorkingDirectory(executable.parent_path().c_str()));
+        check(link->SetDescription(L"Open better-net"));
+        check(link->SetArguments(L"--show"));
+        check(link->SetHotkey(shortcut_hotkey(settings)));
+        check(link->SetShowCmd(SW_SHOWNORMAL));
+        check(link->SetIconLocation(executable.c_str(), 0));
+        check(link.As(&persistence));
 
         return save_shell_link(*persistence.Get(), shortcut_path);
+    } catch (HRESULT result) {
+        return std::unexpected(L"Windows could not save the launcher shortcut: " + windows_error(static_cast<DWORD>(result)));
     } catch (...) {
         return std::unexpected(L"The launcher shortcut could not be created.");
     }
@@ -742,36 +728,20 @@ std::expected<void, std::wstring> disable_launcher_shortcut_at(const std::filesy
             return std::unexpected(L"The Windows shortcut could not be read: " + windows_error(error));
         }
 
-        const HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        const Apartment apartment;
 
-        if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE) {
+        if (!apartment.available()) {
             return std::unexpected(L"Windows could not update the launcher shortcut in this session.");
         }
 
-        struct Apartment {
-            bool owned;
+        ComPtr<IShellLinkW> link;
+        ComPtr<IPersistFile> persistence;
 
-            ~Apartment() {
-                if (owned) {
-                    CoUninitialize();
-                }
-            }
-        };
-
-        const Apartment apartment{SUCCEEDED(initialized)};
-        Microsoft::WRL::ComPtr<IShellLinkW> link;
-        Microsoft::WRL::ComPtr<IPersistFile> persistence;
-
-        if (FAILED(CoCreateInstance(
-                CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf()))) ||
-            FAILED(link.As(&persistence)) || FAILED(persistence->Load(shortcut_path.c_str(), STGM_READ))) {
+        if (!load_shell_link(shortcut_path, link, persistence)) {
             return std::unexpected(L"Windows could not read the launcher shortcut.");
         }
 
-        std::array<wchar_t, 32768> target{};
-
-        if (link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH) != S_OK ||
-            CompareStringOrdinal(target.data(), -1, executable.c_str(), -1, TRUE) != CSTR_EQUAL) {
+        if (!shortcut_targets(*link.Get(), executable)) {
             return std::unexpected(L"This shortcut belongs to another application and was left unchanged.");
         }
 
@@ -817,37 +787,18 @@ std::optional<WORD> read_owned_shortcut_hotkey(const std::filesystem::path& exec
         return std::nullopt;
     }
 
-    const HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const Apartment apartment;
 
-    if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE) {
+    if (!apartment.available()) {
         return std::nullopt;
     }
 
-    struct Apartment {
-        bool owned;
-
-        ~Apartment() {
-            if (owned) {
-                CoUninitialize();
-            }
-        }
-    };
-
-    const Apartment apartment{SUCCEEDED(initialized)};
-    Microsoft::WRL::ComPtr<IShellLinkW> link;
-    Microsoft::WRL::ComPtr<IPersistFile> persistence;
-
-    if (FAILED(CoCreateInstance(
-            CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW, reinterpret_cast<void**>(link.GetAddressOf()))) ||
-        FAILED(link.As(&persistence)) || FAILED(persistence->Load((folder / L"better-net.lnk").c_str(), STGM_READ))) {
-        return std::nullopt;
-    }
-
-    std::array<wchar_t, 32768> target{};
+    ComPtr<IShellLinkW> link;
+    ComPtr<IPersistFile> persistence;
     WORD hotkey = 0;
 
-    if (link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH) != S_OK || FAILED(link->GetHotkey(&hotkey)) ||
-        CompareStringOrdinal(target.data(), -1, executable.c_str(), -1, TRUE) != CSTR_EQUAL) {
+    if (!load_shell_link(folder / L"better-net.lnk", link, persistence) || !shortcut_targets(*link.Get(), executable) ||
+        FAILED(link->GetHotkey(&hotkey))) {
         return std::nullopt;
     }
 
@@ -858,21 +809,7 @@ std::optional<WORD> read_owned_shortcut_hotkey(const std::filesystem::path& exec
 bool launcher_shortcut_matches(const std::filesystem::path& executable, const Settings& settings, bool desktop) noexcept {
     try {
         const auto hotkey = read_owned_shortcut_hotkey(executable, desktop);
-        BYTE modifiers = 0;
-
-        if ((settings.hotkey_modifiers & MOD_CONTROL) != 0) {
-            modifiers |= HOTKEYF_CONTROL;
-        }
-
-        if ((settings.hotkey_modifiers & MOD_ALT) != 0) {
-            modifiers |= HOTKEYF_ALT;
-        }
-
-        if ((settings.hotkey_modifiers & MOD_SHIFT) != 0) {
-            modifiers |= HOTKEYF_SHIFT;
-        }
-
-        return hotkey && *hotkey == MAKEWORD(static_cast<BYTE>(settings.hotkey_key), modifiers);
+        return hotkey && *hotkey == shortcut_hotkey(settings);
     } catch (...) {
         return false;
     }

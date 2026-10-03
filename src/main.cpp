@@ -12,7 +12,6 @@
 #include <wrl/client.h>
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <memory>
 #include <mutex>
@@ -33,7 +32,6 @@ constexpr UINT processes_ready = WM_APP + 5;
 constexpr int app_icon_resource = 101;
 constexpr int app_logo_resource = 102;
 constexpr int settings_id = 101;
-constexpr int exit_id = 104;
 constexpr int minimize_id = 106;
 constexpr int close_id = 107;
 constexpr int card_base = 200;
@@ -57,8 +55,8 @@ void require(HRESULT result) {
     }
 }
 
-D2D1_COLOR_F color(UINT32 value, float alpha = 1.0F) {
-    return D2D1::ColorF(value, alpha);
+D2D1_COLOR_F color(UINT32 value) {
+    return D2D1::ColorF(value);
 }
 
 D2D1_RECT_F play_bounds(float width, float height) {
@@ -128,23 +126,23 @@ struct ProcessResult {
 
 struct Graphics {
     ComPtr<ID2D1Factory> factory;
-    ComPtr<IDWriteFactory> text_factory;
     ComPtr<ID2D1HwndRenderTarget> window_target;
     ComPtr<ID2D1DCRenderTarget> control_target;
     ComPtr<ID2D1SolidColorBrush> window_brush;
     ComPtr<ID2D1SolidColorBrush> control_brush;
     ComPtr<ID2D1Bitmap> logo;
-    std::array<ComPtr<IDWriteTextFormat>, 6> fonts;
+    std::array<ComPtr<IDWriteTextFormat>, 4> fonts;
     std::vector<ComPtr<ID2D1Bitmap>> images;
     UINT dpi = 96;
 
     void initialize() {
         require(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, factory.GetAddressOf()));
+        ComPtr<IDWriteFactory> text_factory;
 
         require(DWriteCreateFactory(
             DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(text_factory.GetAddressOf())));
 
-        constexpr std::array<float, 6> sizes{12, 14, 18, 24, 32, 48};
+        constexpr std::array<float, 4> sizes{12, 14, 18, 24};
 
         for (std::size_t index = 0; index < sizes.size(); ++index) {
             require(text_factory->CreateTextFormat(L"Segoe UI",
@@ -155,11 +153,7 @@ struct Graphics {
                                                    sizes[index],
                                                    L"en-us",
                                                    &fonts[index]));
-
-            fonts[index]->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
         }
-
-        fonts[4]->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
 
         const auto properties = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
                                                              D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
@@ -211,6 +205,12 @@ struct Graphics {
             frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom));
 
         require(window_target->CreateBitmapFromWicBitmap(converter.Get(), nullptr, &logo));
+    }
+
+    void reset_window() {
+        logo.Reset();
+        window_brush.Reset();
+        window_target.Reset();
     }
 
     void text(ID2D1RenderTarget* target,
@@ -301,34 +301,19 @@ struct App {
     bool recording = false;
     bool dry_run = false;
     bool empty_library = false;
-    bool force_show = false;
-    bool background_start = false;
     bool initial_scan = true;
     bool dragging = false;
     bool dragged = false;
     int drag_origin = 0;
     int wheel_delta = 0;
-    std::atomic<bool> launch_running = false;
+    bool launch_running = false;
     std::wstring library_status = L"Looking for installed games...";
     std::wstring settings_status;
     std::wstring count_text;
     UINT taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");
 
     ~App() {
-        scan_worker.request_stop();
-        launch_worker.request_stop();
-        process_worker.request_stop();
-        if (scan_worker.joinable()) {
-            scan_worker.join();
-        }
-        if (launch_worker.joinable()) {
-            launch_worker.join();
-        }
-
-        if (process_worker.joinable()) {
-            process_worker.join();
-        }
-
+        stop_workers();
         remove_tray();
 
         if (window_icon) {
@@ -343,6 +328,20 @@ struct App {
             DeleteObject(control_font);
         }
         DeleteObject(background);
+    }
+
+    void stop_workers() {
+        const std::array workers{&scan_worker, &launch_worker, &process_worker};
+
+        for (auto* worker : workers) {
+            worker->request_stop();
+        }
+
+        for (auto* worker : workers) {
+            if (worker->joinable()) {
+                worker->join();
+            }
+        }
     }
 
     int px(float value) const {
@@ -793,15 +792,11 @@ struct App {
                 }
             }
             if (target->EndDraw() == D2DERR_RECREATE_TARGET) {
-                graphics.logo.Reset();
-                graphics.window_brush.Reset();
-                graphics.window_target.Reset();
+                graphics.reset_window();
                 InvalidateRect(window, nullptr, FALSE);
             }
         } catch (...) {
-            graphics.logo.Reset();
-            graphics.window_brush.Reset();
-            graphics.window_target.Reset();
+            graphics.reset_window();
             FillRect(dc, &state.rcPaint, background);
             SetTextColor(dc, RGB(242, 240, 245));
             SetBkMode(dc, TRANSPARENT);
@@ -868,16 +863,17 @@ struct App {
                               D2D1::RectF(20, art.bottom + 40, width - 20, art.bottom + 59),
                               0,
                               muted_color);
+                const bool enabled = IsWindowEnabled(item.hwndItem);
+                const bool play_hover = enabled && hovered_play == item.hwndItem;
                 graphics.round(target,
                                brush,
                                play_bounds(width, height),
                                7,
-                               !IsWindowEnabled(item.hwndItem)                                   ? 0x242227
-                               : down                                                            ? 0x453958
-                               : hovered_play == item.hwndItem && IsWindowEnabled(item.hwndItem) ? accent_hover_color
-                               : (hover || focused || index == selected)                         ? accent_surface
-                                                                                                 : 0x27252E);
-                const bool play_hover = hovered_play == item.hwndItem && IsWindowEnabled(item.hwndItem);
+                               !enabled                                  ? 0x242227
+                               : down                                    ? 0x453958
+                               : play_hover                              ? accent_hover_color
+                               : (hover || focused || index == selected) ? accent_surface
+                                                                         : 0x27252E);
                 if (play_hover) {
                     const auto bounds = play_bounds(width, height);
                     brush->SetColor(color(accent_hover_border_color));
@@ -891,9 +887,9 @@ struct App {
                               play_label(index),
                               D2D1::RectF(36, height - 54, width - 36, height - 14),
                               1,
-                              !IsWindowEnabled(item.hwndItem) ? muted_color
-                              : play_hover                    ? text_color
-                                                              : 0xD5CBF4,
+                              !enabled     ? muted_color
+                              : play_hover ? text_color
+                                           : 0xD5CBF4,
                               DWRITE_TEXT_ALIGNMENT_CENTER,
                               true);
             }
@@ -1027,9 +1023,6 @@ struct App {
             break;
         case startup_id:
             toggle_startup();
-            break;
-        case exit_id:
-            shutdown();
             break;
         default:
             break;
@@ -1386,25 +1379,10 @@ struct App {
             static_cast<void>(bnet::install_launcher_shortcut(executable, settings));
             shortcut_suspended = false;
         }
-        scan_worker.request_stop();
-        launch_worker.request_stop();
-        process_worker.request_stop();
         launch_guard.cancel();
         KillTimer(window, 1);
         remove_tray();
-
-        if (scan_worker.joinable()) {
-            scan_worker.join();
-        }
-
-        if (launch_worker.joinable()) {
-            launch_worker.join();
-        }
-
-        if (process_worker.joinable()) {
-            process_worker.join();
-        }
-
+        stop_workers();
         DestroyWindow(window);
     }
 
@@ -1781,6 +1759,8 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
 int run(HINSTANCE instance) {
     int argument_count = 0;
     auto* arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
+    bool force_show = false;
+    bool background_start = false;
     App app;
     for (int index = 1; index < argument_count; ++index) {
         const std::wstring_view argument(arguments[index]);
@@ -1789,9 +1769,9 @@ int run(HINSTANCE instance) {
         } else if (argument == L"--empty-library") {
             app.empty_library = true;
         } else if (argument == L"--show") {
-            app.force_show = true;
+            force_show = true;
         } else if (argument == L"--background") {
-            app.background_start = true;
+            background_start = true;
         }
     }
     LocalFree(arguments);
@@ -1802,7 +1782,7 @@ int run(HINSTANCE instance) {
     const bool existing_instance = GetLastError() == ERROR_ALREADY_EXISTS;
     const auto mutex = std::unique_ptr<void, decltype(&CloseHandle)>(singleton, &CloseHandle);
     if (existing_instance) {
-        if (app.background_start && !app.force_show) {
+        if (background_start && !force_show) {
             return 0;
         }
         if (const auto existing = FindWindowW(window_class, nullptr)) {
@@ -1860,7 +1840,7 @@ int run(HINSTANCE instance) {
     app.update_cards();
     app.center_window(true);
     app.scan();
-    const bool start_hidden = (app.background_start || app.settings.start_hidden) && app.tray_added && !app.force_show;
+    const bool start_hidden = (background_start || app.settings.start_hidden) && app.tray_added && !force_show;
     if (!start_hidden) {
         ShowWindow(app.window, SW_SHOW);
         ShowWindow(app.window, SW_SHOW);

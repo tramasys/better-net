@@ -29,7 +29,6 @@ struct Catalog {
 struct InstallationRecord {
     std::wstring product_id;
     std::filesystem::path install_path;
-    std::wstring display_name;
 };
 
 struct AgentRecords {

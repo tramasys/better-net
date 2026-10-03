@@ -58,9 +58,9 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
 
     write_file(installation / L".build.info", "Active!DEC:1|Version!STRING:0|Product!STRING:0\nmalformed\n1|3.14.2.123|auks\n");
 
-    const std::array records = {bnet::InstallationRecord{L"auks", installation, {}},
-                                bnet::InstallationRecord{L"AUKS", installation / L".", {}},
-                                bnet::InstallationRecord{L"auks", root / L"Missing", {}}};
+    const std::array records = {bnet::InstallationRecord{L"auks", installation},
+                                bnet::InstallationRecord{L"AUKS", installation / L"."},
+                                bnet::InstallationRecord{L"auks", root / L"Missing"}};
 
     const auto catalog = bnet::catalog_from_records(records, client);
     require(catalog.games.size() == 1, "Discovery must reject stale paths and deduplicate records");
@@ -116,7 +116,7 @@ void test_discovery_and_launch(const std::filesystem::path& root) {
         const auto direct_executable = direct_installation / direct.executable;
         write_file(direct_executable, bytes);
 
-        const std::array direct_records = {bnet::InstallationRecord{std::wstring(direct.product), direct_installation, {}}};
+        const std::array direct_records = {bnet::InstallationRecord{std::wstring(direct.product), direct_installation}};
 
         const auto direct_catalog = bnet::catalog_from_records(direct_records);
         require(direct_catalog.games.size() == 1, "Direct games must be discoverable without Battle.net");
@@ -216,7 +216,7 @@ void test_running_games(const std::filesystem::path& root) {
                            &child.process) != FALSE,
             "Fixture process must be created suspended");
 
-    const std::array records = {bnet::InstallationRecord{L"diablo3", installation, {}}};
+    const std::array records = {bnet::InstallationRecord{L"diablo3", installation}};
     const auto catalog = bnet::catalog_from_records(records);
     require(catalog.games.size() == 1, "Suspended fixture must have a valid direct launch descriptor");
     std::array games = {catalog.games.front(), catalog.games.front()};

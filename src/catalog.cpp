@@ -396,13 +396,7 @@ std::filesystem::path artwork_for(const Product& product, const std::filesystem:
     return {};
 }
 
-struct RegistryCloser {
-    void operator()(HKEY key) const {
-        RegCloseKey(key);
-    }
-};
-
-using RegistryKey = std::unique_ptr<std::remove_pointer_t<HKEY>, RegistryCloser>;
+using RegistryKey = std::unique_ptr<std::remove_pointer_t<HKEY>, decltype(&RegCloseKey)>;
 
 std::wstring registry_string(HKEY key, const wchar_t* name) {
     DWORD size = 0;
@@ -485,7 +479,7 @@ void registry_records(HKEY root,
         return;
     }
 
-    const RegistryKey parent(raw);
+    const RegistryKey parent(raw, RegCloseKey);
 
     for (DWORD index = 0; index < 32768 && !cancellation.stop_requested(); ++index) {
         std::array<wchar_t, 256> name{};
@@ -508,7 +502,7 @@ void registry_records(HKEY root,
             continue;
         }
 
-        const RegistryKey child(child_raw);
+        const RegistryKey child(child_raw, RegCloseKey);
         const auto location = registry_string(child.get(), L"InstallLocation");
 
         if (location.empty()) {
@@ -523,7 +517,7 @@ void registry_records(HKEY root,
             executable_file(std::filesystem::path(location) / L"Battle.net.exe")) {
             client = std::filesystem::path(location) / L"Battle.net.exe";
         } else if (!id.empty() && records.size() < max_records) {
-            records.push_back({id, location, display});
+            records.push_back({id, location});
         }
     }
 }
