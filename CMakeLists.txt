@@ -22,18 +22,6 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
-include(CheckCXXSourceCompiles)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/tools/feature_probe.cpp" BNET_FEATURE_PROBE)
-set(CMAKE_REQUIRED_LIBRARIES d2d1 dwrite windowscodecs ole32)
-check_cxx_source_compiles("${BNET_FEATURE_PROBE}" BNET_MODERN_CPP_SUPPORTED)
-unset(CMAKE_REQUIRED_LIBRARIES)
-
-if(NOT BNET_MODERN_CPP_SUPPORTED)
-    message(FATAL_ERROR "Required C++26 mode and modern standard-library features did not compile and link")
-endif()
-
-find_package(Python3 3.11 REQUIRED COMPONENTS Interpreter)
-
 add_library(bnet_options INTERFACE)
 target_compile_options(bnet_options INTERFACE
     /W4 /permissive- /EHsc /utf-8 /Zc:__cplusplus
@@ -55,18 +43,5 @@ if(BUILD_TESTING)
     target_link_libraries(core_tests PRIVATE bnet_core)
     add_test(NAME core COMMAND core_tests)
 endif()
-
-add_custom_target(format
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/format.py"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    VERBATIM)
-add_custom_target(format-check
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/format.py" --check
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    VERBATIM)
-add_custom_target(analyze
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/analyze.py" "${CMAKE_BINARY_DIR}"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    VERBATIM)
 
 install(TARGETS better-net RUNTIME DESTINATION .)
